@@ -572,3 +572,51 @@ body {
   padding-top: 14px;
   border-top: 1px solid var(--card-border);
 }
+
+/* Responsive Mobile Layout */
+@media (max-width: 768px) {
+  .app-container {
+    padding: 14px 12px;
+  }
+
+  .header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+
+  .header-actions {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .select-month {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .header-actions .btn {
+    flex: 1;
+  }
+
+  .metrics-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .main-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-box {
+    width: 92%;
+    margin: 0 auto;
+    padding: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -148,15 +148,27 @@ async function performRouterSync(password = 'admin', routerIp = '192.168.0.1') {
   const cleanIp = (routerIp || ROUTER_IP).replace(/^https?:\/\//i, '').replace(/\/.*$/, '').trim();
   const httpUrl = `http://${cleanIp}/cgi-bin/http.cgi`;
   
-  // Step 1: Get Token
+  // Step 1: Safe Token Retrieval
   const tokenRes = await fetch(httpUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ cmd: 232, method: 'GET', sessionId: '' })
   });
-  const tokenData = await tokenRes.json();
+  
+  const textBody = await tokenRes.text();
+  if (textBody.trim().startsWith('<')) {
+    throw new Error(`Device at ${cleanIp} returned HTML (Not ZLT API). Ensure router IP is correct or paste SMS text.`);
+  }
+
+  let tokenData;
+  try {
+    tokenData = JSON.parse(textBody);
+  } catch (e) {
+    throw new Error(`Invalid JSON response from router at ${cleanIp}.`);
+  }
+
   const token = tokenData?.token || tokenData?.data?.token;
-  if (!token) throw new Error(`Could not connect to router at ${targetIp}`);
+  if (!token) throw new Error(`Could not retrieve security token from ${cleanIp}`);
 
   // Step 2: Hash Password & Login
   const passwdHash = crypto.createHash('sha256').update(token + password).digest('hex');
@@ -167,21 +179,31 @@ async function performRouterSync(password = 'admin', routerIp = '192.168.0.1') {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ cmd: 100, method: 'POST', username: 'admin', passwd: passwdHash, sessionId, isAutoUpgrade: '1', isCheckPasswd: '1' })
   });
-  const loginData = await loginRes.json();
+  
+  const loginText = await loginRes.text();
+  if (loginText.trim().startsWith('<')) {
+    throw new Error(`Login endpoint returned HTML page.`);
+  }
+
+  const loginData = JSON.parse(loginText);
   if (loginData.login_fail === 'fail') throw new Error('Router password incorrect.');
 
   const activeSessionId = loginData.sessionId || sessionId;
 
   // Step 3: Refresh Session Token
-  const tokRes = await fetch(httpUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ cmd: 233, method: 'GET', sessionId: activeSessionId })
-  });
-  const activeToken = (await tokRes.json())?.token || token;
+  let activeToken = token;
+  try {
+    const tokRes = await fetch(httpUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cmd: 233, method: 'GET', sessionId: activeSessionId })
+    });
+    const tokData = await tokRes.json();
+    if (tokData?.token) activeToken = tokData.token;
+  } catch (e) {}
 
   // Step 4: Detect Device Model (cmd: 1005)
-  let boardType = 'ZLT MiFi / Router';
+  let boardType = 'MTN MiFi / Router';
   try {
     const devRes = await fetch(httpUrl, {
       method: 'POST',
