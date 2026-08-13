@@ -1,5 +1,5 @@
 {
-  "name": "mtn-odu-data-tracker",
+  "name": "pulse5g-data-tracker",
   "version": "1.0.0",
   "description": "Track, parse, and calculate MTN ODU ZLT X17U WiFi data usage",
   "main": "server.js",
