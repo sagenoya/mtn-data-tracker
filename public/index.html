@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MTN ODU Data Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <div class="logo-mark">MTN 5G</div>
+        <div>
+          <h1>MTN ODU Data Tracker</h1>
+          <p class="subtitle">ZLT X17U &bull; <a href="http://192.168.0.1/#/home" target="_blank">192.168.0.1</a></p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <select id="month-selector" class="input-element select-month">
+          <!-- Dynamic Month options -->
+        </select>
+        <button class="btn btn-outline" id="btn-sync-router">
+          <span class="status-indicator"></span> Sync Router
+        </button>
+        <button class="btn btn-primary" id="btn-export-csv">
+          Export CSV
+        </button>
+      </div>
+    </header>
+
+    <!-- Top Key Metrics -->
+    <section class="metrics-grid">
+      <div class="metric-card">
+        <span class="metric-label">Total Usage This Month</span>
+        <h2 class="metric-value" id="val-total-usage">0.00 GB</h2>
+        <span class="metric-sub" id="sub-total-days">0 days recorded</span>
+      </div>
+
+      <div class="metric-card">
+        <span class="metric-label">Latest Day Usage</span>
+        <h2 class="metric-value highlight" id="val-latest-usage">0.00 GB</h2>
+        <span class="metric-sub" id="sub-latest-date">--</span>
+      </div>
+
+      <div class="metric-card">
+        <span class="metric-label">Daily Average</span>
+        <h2 class="metric-value" id="val-daily-avg">0.00 GB/d</h2>
+        <span class="metric-sub" id="sub-projected">Projected: 0 GB/mo</span>
+      </div>
+
+      <div class="metric-card">
+        <span class="metric-label">Plan Status / Pace</span>
+        <h2 class="metric-value" id="val-daily-budget">Unlimited</h2>
+        <span class="metric-sub" id="sub-remaining-budget">No Cap Active</span>
+      </div>
+    </section>
+
+    <!-- Plan Status Banner -->
+    <section class="plan-banner card">
+      <div class="banner-content">
+        <div>
+          <span class="banner-title" id="plan-status-title">Unlimited Data Plan Active</span>
+          <p class="banner-desc" id="plan-status-desc">Total Consumed: 130.50 GB across 6 days logged</p>
+        </div>
+        <div class="banner-badge" id="banner-badge">UNLIMITED</div>
+      </div>
+      <div class="progress-bar-wrap" id="progress-wrap">
+        <div class="progress-fill" id="progress-fill"></div>
+      </div>
+    </section>
+
+    <!-- Main Grid: Chart + Settings -->
+    <div class="main-grid">
+      <!-- Usage Chart -->
+      <section class="card chart-card">
+        <div class="card-header">
+          <h2>Daily Consumption Trend</h2>
+          <span class="chart-tag">GB / Day</span>
+        </div>
+        <div class="chart-wrapper">
+          <canvas id="usageChart"></canvas>
+        </div>
+      </section>
+
+      <!-- Control Panel -->
+      <section class="card controls-card">
+        <div class="card-header">
+          <h2>Plan Settings</h2>
+        </div>
+
+        <form id="calculator-form" class="settings-form">
+          <div class="segmented-control">
+            <button type="button" class="segment-btn active" id="mode-unlimited">Unlimited (ODU / FibreX)</button>
+            <button type="button" class="segment-btn" id="mode-custom">Capped Plan</button>
+          </div>
+
+          <div class="form-group" id="group-monthly-cap" style="display: none;">
+            <label for="monthlyLimit">Monthly Cap (GB)</label>
+            <input type="number" id="monthlyLimit" value="1000" min="1" step="1" class="input-element" placeholder="e.g. 1000">
+          </div>
+
+          <div class="form-group">
+            <label for="cycleStartDay">Billing Cycle Start Day</label>
+            <input type="number" id="cycleStartDay" value="1" min="1" max="31" class="input-element">
+          </div>
+
+          <button type="submit" class="btn btn-secondary full-width">Save Settings</button>
+        </form>
+
+        <div class="stats-list">
+          <div class="stat-row">
+            <span>Burn Rate</span>
+            <strong id="res-burn-rate">0 GB/day</strong>
+          </div>
+          <div class="stat-row">
+            <span>Projected Month End</span>
+            <strong id="res-projected-end">0 GB</strong>
+          </div>
+          <div class="stat-row">
+            <span>Latency Check</span>
+            <button type="button" class="btn btn-outline btn-xs" id="btn-ping">Ping Router</button>
+          </div>
+          <div class="stat-row">
+            <span>Status</span>
+            <strong id="res-status-tag">Unlimited Plan Active</strong>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Minimal History Table with Pagination -->
+    <section class="card table-card">
+      <div class="card-header">
+        <h2>Daily Usage Logs</h2>
+        <span class="count-tag" id="records-count">0 entries</span>
+      </div>
+      <div class="table-container">
+        <table class="minimal-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Data Used</th>
+              <th>Type</th>
+              <th>Raw Router Message</th>
+            </tr>
+          </thead>
+          <tbody id="table-body">
+            <!-- Dynamic rows -->
+          </tbody>
+        </table>
+      </div>
+      <!-- Clean Pagination Controls -->
+      <div class="pagination-footer">
+        <button class="btn btn-outline btn-xs" id="btn-prev-page" disabled>&larr; Prev</button>
+        <span class="page-indicator" id="page-indicator">Page 1 of 1</span>
+        <button class="btn btn-outline btn-xs" id="btn-next-page" disabled>Next &rarr;</button>
+      </div>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

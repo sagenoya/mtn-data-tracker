@@ -1,0 +1,13 @@
+{
+  "name": "mtn-odu-data-tracker",
+  "version": "1.0.0",
+  "description": "Track, parse, and calculate MTN ODU ZLT X17U WiFi data usage",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5"
+  }
+}

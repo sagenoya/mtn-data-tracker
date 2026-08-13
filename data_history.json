@@ -1,0 +1,46 @@
+{
+  "settings": {
+    "monthlyLimitGB": 1000,
+    "cycleStartDay": 1,
+    "isUnlimited": true,
+    "detectedModel": "ZLT X17U"
+  },
+  "records": [
+    {
+      "date": "2026-08-07",
+      "usageGB": 7.47,
+      "isCorrected": false,
+      "rawMessage": "Y'ello, your data usage for 07-08-2026 is 7.47GB"
+    },
+    {
+      "date": "2026-08-08",
+      "usageGB": 20.85,
+      "isCorrected": false,
+      "rawMessage": "Y'ello, your data usage for 08-08-2026 is 20.85GB"
+    },
+    {
+      "date": "2026-08-09",
+      "usageGB": 27.33,
+      "isCorrected": false,
+      "rawMessage": "Y'ello, your data usage for 09-08-2026 is 27.33GB"
+    },
+    {
+      "date": "2026-08-10",
+      "usageGB": 35.47,
+      "isCorrected": false,
+      "rawMessage": "Y'ello, your data usage for 10-08-2026 is 35.47GB"
+    },
+    {
+      "date": "2026-08-11",
+      "usageGB": 19.82,
+      "isCorrected": true,
+      "rawMessage": "Y'ello, your corrected data usage for 11-08-2026 is 19.82GB"
+    },
+    {
+      "date": "2026-08-12",
+      "usageGB": 19.56,
+      "isCorrected": false,
+      "rawMessage": "Y'ello, your data usage for 12-08-2026 is 19.56GB"
+    }
+  ]
+}
