@@ -183,13 +183,11 @@ function renderDashboard() {
   // Update Dynamic Device Model Tag
   const deviceTag = document.getElementById('detected-device-tag');
   if (deviceTag) {
-    const model = settings.detectedModel || 'ZLT X17U';
-    const isOdu = /X17U|ODU/i.test(model);
-    const isFibre = /Fibre/i.test(model);
-    let devLabel = 'MTN 5G Broadband';
-    if (isOdu) devLabel = 'MTN 5G ODU';
-    if (isFibre) devLabel = 'MTN FibreX';
-    deviceTag.textContent = `${devLabel} • ${model}`;
+    let model = settings.detectedModel || 'MTN 5G ODU • ZLT X17U';
+    if (model === 'MTN MiFi / Router' || model === 'ZLT X17U' || model === 'X17U') {
+      model = 'MTN 5G ODU • ZLT X17U';
+    }
+    deviceTag.textContent = model;
   }
 
   const totalGB = filteredRecords.reduce((sum, r) => sum + r.usageGB, 0);

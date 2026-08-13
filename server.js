@@ -203,7 +203,7 @@ async function performRouterSync(password = 'admin', routerIp = '192.168.0.1') {
   } catch (e) {}
 
   // Step 4: Detect Device Model (cmd: 1005)
-  let boardType = 'MTN MiFi / Router';
+  let boardType = (cleanIp === '192.168.0.1' || !cleanIp) ? 'MTN 5G ODU • ZLT X17U' : (cleanIp.includes('8.1') ? 'MTN Broadband 4G MiFi' : 'MTN Broadband Gateway');
   try {
     const devRes = await fetch(httpUrl, {
       method: 'POST',
@@ -211,7 +211,13 @@ async function performRouterSync(password = 'admin', routerIp = '192.168.0.1') {
       body: JSON.stringify({ cmd: 1005, method: 'GET', sessionId: activeSessionId, token: activeToken })
     });
     const devData = await devRes.json();
-    if (devData?.board_type) boardType = devData.board_type;
+    const rawModel = devData?.board_type || devData?.model_name || devData?.product_name || devData?.model;
+    if (rawModel) {
+      if (/X17U|ODU/i.test(rawModel)) boardType = 'MTN 5G ODU • ZLT X17U';
+      else if (/X28/i.test(rawModel)) boardType = 'MTN 5G ODU • ZLT X28';
+      else if (/Fibre/i.test(rawModel)) boardType = `MTN FibreX • ${rawModel}`;
+      else boardType = rawModel;
+    }
   } catch (e) {}
 
   // Step 5: Fetch & Decode SMS Inbox (cmd: 12)
