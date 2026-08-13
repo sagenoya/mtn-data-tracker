@@ -144,8 +144,9 @@ app.post('/api/settings', (req, res) => {
 });
 
 // Helper function for background router sync
-async function performRouterSync(password = 'admin') {
-  const httpUrl = `http://${ROUTER_IP}/cgi-bin/http.cgi`;
+async function performRouterSync(password = 'admin', routerIp = '192.168.0.1') {
+  const cleanIp = (routerIp || ROUTER_IP).replace(/^https?:\/\//i, '').replace(/\/.*$/, '').trim();
+  const httpUrl = `http://${cleanIp}/cgi-bin/http.cgi`;
   
   // Step 1: Get Token
   const tokenRes = await fetch(httpUrl, {
@@ -155,7 +156,7 @@ async function performRouterSync(password = 'admin') {
   });
   const tokenData = await tokenRes.json();
   const token = tokenData?.token || tokenData?.data?.token;
-  if (!token) throw new Error('Could not retrieve security token from router.');
+  if (!token) throw new Error(`Could not connect to router at ${targetIp}`);
 
   // Step 2: Hash Password & Login
   const passwdHash = crypto.createHash('sha256').update(token + password).digest('hex');
@@ -180,7 +181,7 @@ async function performRouterSync(password = 'admin') {
   const activeToken = (await tokRes.json())?.token || token;
 
   // Step 4: Detect Device Model (cmd: 1005)
-  let boardType = 'ZLT X17U';
+  let boardType = 'ZLT MiFi / Router';
   try {
     const devRes = await fetch(httpUrl, {
       method: 'POST',
@@ -215,9 +216,9 @@ async function performRouterSync(password = 'admin') {
 
 // Auto-sync router SMS endpoint
 app.post('/api/sync-router', async (req, res) => {
-  const { password } = req.body;
+  const { password, routerIp } = req.body;
   try {
-    const updatedData = await performRouterSync(password || 'admin');
+    const updatedData = await performRouterSync(password || 'admin', routerIp || '192.168.0.1');
     res.json({ success: true, parsedCount: updatedData.records.length, data: updatedData });
   } catch (err) {
     res.status(500).json({ error: err.message });

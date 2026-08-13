@@ -22,7 +22,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Event Listeners
   document.getElementById('calculator-form').addEventListener('submit', handleSettingsUpdate);
-  document.getElementById('btn-sync-router').addEventListener('click', handleRouterSync);
+  document.getElementById('btn-sync-router').addEventListener('click', () => openModal('sync-modal'));
+  document.getElementById('close-sync-modal').addEventListener('click', () => closeModal('sync-modal'));
+  document.getElementById('btn-cancel-sync').addEventListener('click', () => closeModal('sync-modal'));
+  document.getElementById('btn-exec-sync').addEventListener('click', handleRouterSync);
+
   document.getElementById('btn-export-csv').addEventListener('click', () => {
     window.location.href = '/api/export-csv';
   });
@@ -119,6 +123,18 @@ function renderDashboard() {
   setPlanMode(isUnlimited);
   document.getElementById('monthlyLimit').value = settings.monthlyLimitGB || 1000;
   document.getElementById('cycleStartDay').value = settings.cycleStartDay || 1;
+
+  // Update Dynamic Device Model Tag
+  const deviceTag = document.getElementById('detected-device-tag');
+  if (deviceTag) {
+    const model = settings.detectedModel || 'ZLT X17U';
+    const isOdu = /X17U|ODU/i.test(model);
+    const isFibre = /Fibre/i.test(model);
+    let devLabel = 'MTN 5G Broadband';
+    if (isOdu) devLabel = 'MTN 5G ODU';
+    if (isFibre) devLabel = 'MTN FibreX';
+    deviceTag.textContent = `${devLabel} • ${model}`;
+  }
 
   const totalGB = filteredRecords.reduce((sum, r) => sum + r.usageGB, 0);
   const totalDays = filteredRecords.length;
@@ -333,31 +349,65 @@ async function handleSettingsUpdate(e) {
 
 // Router Auto-Sync Handler
 async function handleRouterSync() {
-  const btn = document.getElementById('btn-sync-router');
-  const originalHtml = btn.innerHTML;
-  btn.innerHTML = '<span class="status-indicator"></span> Syncing...';
-  btn.disabled = true;
+  const presetVal = document.getElementById('router-preset-select').value;
+  let rawIp = presetVal === 'custom' ? document.getElementById('router-ip').value : presetVal;
+  const routerIp = rawIp.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').trim() || '192.168.0.1';
+  
+  const password = document.getElementById('router-password').value || 'admin';
+  const msgEl = document.getElementById('sync-status-msg');
+  const execBtn = document.getElementById('btn-exec-sync');
+
+  msgEl.className = 'status-msg';
+  msgEl.textContent = `Connecting to router at ${routerIp}...`;
+  execBtn.disabled = true;
 
   try {
     const res = await fetch('/api/sync-router', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: 'admin' })
+      body: JSON.stringify({ password, routerIp })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Sync failed');
 
-    btn.innerHTML = '<span class="status-indicator"></span> Synced!';
+    msgEl.className = 'status-msg success';
+    msgEl.textContent = `Synced! Connected to ${data.data.settings.detectedModel || 'Router'}.`;
     currentData = data.data;
     renderDashboard();
+    setTimeout(() => {
+      closeModal('sync-modal');
+      execBtn.disabled = false;
+      msgEl.textContent = '';
+    }, 1200);
   } catch (err) {
-    btn.innerHTML = '<span class="status-indicator"></span> Sync Failed';
+    execBtn.disabled = false;
+    msgEl.className = 'status-msg error';
+    msgEl.textContent = 'Sync error: ' + err.message;
   }
+}
 
-  setTimeout(() => {
-    btn.innerHTML = originalHtml;
-    btn.disabled = false;
-  }, 2000);
+document.addEventListener('DOMContentLoaded', () => {
+  const presetSelect = document.getElementById('router-preset-select');
+  const customIpGroup = document.getElementById('custom-ip-group');
+  if (presetSelect && customIpGroup) {
+    presetSelect.addEventListener('change', (e) => {
+      if (e.target.value === 'custom') {
+        customIpGroup.style.display = 'block';
+      } else {
+        customIpGroup.style.display = 'none';
+      }
+    });
+  }
+});
+
+function openModal(id) {
+  const modal = document.getElementById(id);
+  if (modal) modal.classList.add('active');
+}
+
+function closeModal(id) {
+  const modal = document.getElementById(id);
+  if (modal) modal.classList.remove('active');
 }
 
 // Ping Latency Diagnostics Handler
