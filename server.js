@@ -233,15 +233,15 @@ async function performRouterSync(password = 'admin', routerIp = '192.168.0.1') {
   });
 
   const parsed = parseMtnnSmsText(combinedText);
-  return saveRecords(parsed, boardType);
+  return { records: parsed, detectedModel: boardType };
 }
 
 // Auto-sync router SMS endpoint
 app.post('/api/sync-router', async (req, res) => {
   const { password, routerIp } = req.body;
   try {
-    const updatedData = await performRouterSync(password || 'admin', routerIp || '192.168.0.1');
-    res.json({ success: true, parsedCount: updatedData.records.length, data: updatedData });
+    const result = await performRouterSync(password || 'admin', routerIp || '192.168.0.1');
+    res.json({ success: true, parsedCount: result.records.length, records: result.records, detectedModel: result.detectedModel });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

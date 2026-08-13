@@ -135,7 +135,7 @@ async function performVercelRouterSync(password = 'admin', routerIp = '192.168.0
   });
 
   const parsed = parseMtnnSmsText(combinedText);
-  return saveRecords(parsed);
+  return { records: parsed, detectedModel: 'MTN MiFi / Router' };
 }
 
 // REST Endpoints
@@ -146,8 +146,8 @@ app.get('/api/history', (req, res) => {
 app.post('/api/sync-router', async (req, res) => {
   const { password, routerIp } = req.body;
   try {
-    const updatedData = await performVercelRouterSync(password || 'admin', routerIp || '192.168.0.1');
-    res.json({ success: true, parsedCount: updatedData.records.length, data: updatedData });
+    const result = await performVercelRouterSync(password || 'admin', routerIp || '192.168.0.1');
+    res.json({ success: true, parsedCount: result.records.length, records: result.records, detectedModel: result.detectedModel });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

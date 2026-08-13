@@ -1,8 +1,11 @@
-let chartInstance = null;
-let currentData = {
-  settings: { monthlyLimitGB: 1000, cycleStartDay: 1, isUnlimited: true },
+const STORAGE_KEY = 'wifiwatch_user_data';
+const DEFAULT_DATA = {
+  settings: { monthlyLimitGB: 1000, cycleStartDay: 1, isUnlimited: true, detectedModel: 'MTN 5G ODU • ZLT X17U' },
   records: []
 };
+
+let chartInstance = null;
+let currentData = JSON.parse(JSON.stringify(DEFAULT_DATA));
 let selectedMonthKey = null;
 let currentPage = 1;
 const PAGE_SIZE = 10;
@@ -10,6 +13,47 @@ const PAGE_SIZE = 10;
 // Request notification permission if available
 if ('Notification' in window && Notification.permission === 'default') {
   Notification.requestPermission();
+}
+
+function loadLocalData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && Array.isArray(parsed.records) && parsed.settings) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.error('Error reading localStorage:', e);
+  }
+  return null;
+}
+
+function saveLocalData(data) {
+  currentData = data;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch (e) {
+    console.error('Error saving to localStorage:', e);
+  }
+}
+
+function mergeRecords(newRecords, detectedModel = null) {
+  const map = new Map();
+  if (detectedModel) {
+    currentData.settings.detectedModel = detectedModel;
+  }
+  (currentData.records || []).forEach(r => map.set(r.date, r));
+  (newRecords || []).forEach(nr => {
+    if (!map.has(nr.date) || nr.isCorrected || !map.get(nr.date).isCorrected) {
+      map.set(nr.date, nr);
+    }
+  });
+  currentData.records = Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
+  saveLocalData(currentData);
+  renderMonthSelector();
+  renderDashboard();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -27,9 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-cancel-sync').addEventListener('click', () => closeModal('sync-modal'));
   document.getElementById('btn-exec-sync').addEventListener('click', handleRouterSync);
 
-  document.getElementById('btn-export-csv').addEventListener('click', () => {
-    window.location.href = '/api/export-csv';
-  });
+  document.getElementById('btn-export-csv').addEventListener('click', exportCsv);
 
   const pingBtn = document.getElementById('btn-ping');
   if (pingBtn) pingBtn.addEventListener('click', handlePing);
@@ -51,22 +93,36 @@ function setPlanMode(isUnlimited) {
   }
 }
 
-// Fetch current history from backend API
+// Fetch history from browser localStorage or seed from backend
 async function fetchData() {
-  try {
-    const res = await fetch('/api/history');
-    if (!res.ok) throw new Error('Failed to fetch data');
-    currentData = await res.json();
-    
+  const local = loadLocalData();
+  if (local) {
+    currentData = local;
     if (currentData.settings.isUnlimited === undefined) {
       currentData.settings.isUnlimited = true;
     }
-    
     renderMonthSelector();
     renderDashboard();
-  } catch (err) {
-    console.error('Error fetching data:', err);
+    return;
   }
+
+  try {
+    const res = await fetch('/api/history');
+    if (res.ok) {
+      currentData = await res.json();
+    } else {
+      currentData = JSON.parse(JSON.stringify(DEFAULT_DATA));
+    }
+  } catch (err) {
+    currentData = JSON.parse(JSON.stringify(DEFAULT_DATA));
+  }
+
+  if (currentData.settings.isUnlimited === undefined) {
+    currentData.settings.isUnlimited = true;
+  }
+  saveLocalData(currentData);
+  renderMonthSelector();
+  renderDashboard();
 }
 
 // Populate Month Dropdown Options
@@ -282,6 +338,17 @@ function renderTable(records) {
   const tbody = document.getElementById('table-body');
   document.getElementById('records-count').textContent = `${records.length} entries`;
 
+  if (records.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="3" style="text-align: center; color: var(--text-muted); padding: 36px 16px;">No usage records found yet. Click <strong>Sync Router</strong> to fetch your logs.</td></tr>`;
+    const pageIndicator = document.getElementById('page-indicator');
+    const prevBtn = document.getElementById('btn-prev-page');
+    const nextBtn = document.getElementById('btn-next-page');
+    if (pageIndicator) pageIndicator.textContent = 'Page 1 of 1';
+    if (prevBtn) prevBtn.disabled = true;
+    if (nextBtn) nextBtn.disabled = true;
+    return;
+  }
+
   const sorted = [...records].reverse();
   const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   if (currentPage > totalPages) currentPage = totalPages;
@@ -298,7 +365,6 @@ function renderTable(records) {
           ${r.isCorrected ? 'Corrected' : 'Daily Log'}
         </span>
       </td>
-      <td><div class="raw-msg" title="${r.rawMessage}">${r.rawMessage}</div></td>
     </tr>
   `).join('');
 
@@ -327,27 +393,43 @@ function renderTable(records) {
   }
 }
 
-// Settings Update Handler
-async function handleSettingsUpdate(e) {
+// CSV Export from Local Browser Records
+function exportCsv() {
+  const records = currentData.records || [];
+  let csv = 'Date,Usage_GB,Status,Raw_Message\n';
+  records.forEach(r => {
+    const msg = (r.rawMessage || '').replace(/"/g, '""');
+    csv += `"${r.date}",${r.usageGB},"${r.isCorrected ? 'Corrected' : 'Daily Summary'}","${msg}"\n`;
+  });
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `wifiwatch_data_history_${new Date().toISOString().substring(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// Settings Update Handler (Saved directly to localStorage)
+function handleSettingsUpdate(e) {
   e.preventDefault();
   const isUnlimited = document.getElementById('mode-unlimited').classList.contains('active');
   const monthlyLimitGB = parseFloat(document.getElementById('monthlyLimit').value) || 1000;
   const cycleStartDay = parseInt(document.getElementById('cycleStartDay').value) || 1;
 
-  try {
-    const res = await fetch('/api/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ monthlyLimitGB, cycleStartDay, isUnlimited })
-    });
-    currentData = await res.json();
-    renderDashboard();
-  } catch (err) {
-    alert('Failed to save settings: ' + err.message);
-  }
+  currentData.settings = {
+    ...currentData.settings,
+    monthlyLimitGB,
+    cycleStartDay,
+    isUnlimited
+  };
+  saveLocalData(currentData);
+  renderDashboard();
 }
 
-// Router Auto-Sync Handler
+// Router Auto-Sync Handler (Merges router records into visitor's localStorage)
 async function handleRouterSync() {
   const presetVal = document.getElementById('router-preset-select').value;
   let rawIp = presetVal === 'custom' ? document.getElementById('router-ip').value : presetVal;
@@ -370,10 +452,13 @@ async function handleRouterSync() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Sync failed');
 
+    const newRecords = data.records || data.data?.records || [];
+    const model = data.detectedModel || data.data?.settings?.detectedModel || 'MTN Router';
+    
+    mergeRecords(newRecords, model);
+
     msgEl.className = 'status-msg success';
-    msgEl.textContent = `Synced! Connected to ${data.data.settings.detectedModel || 'Router'}.`;
-    currentData = data.data;
-    renderDashboard();
+    msgEl.textContent = `Synced! Connected to ${model} (${newRecords.length} records).`;
     setTimeout(() => {
       closeModal('sync-modal');
       execBtn.disabled = false;
