@@ -60,9 +60,10 @@ function parseMtnnSmsText(text) {
   return records;
 }
 
-function saveRecords(newRecords) {
+function saveRecords(newRecords, boardType = null) {
   const data = getDbData();
   const map = new Map();
+  if (boardType) data.settings.detectedModel = boardType;
   data.records.forEach(r => map.set(r.date, r));
   newRecords.forEach(nr => {
     if (!map.has(nr.date) || nr.isCorrected || !map.get(nr.date).isCorrected) {
@@ -74,9 +75,82 @@ function saveRecords(newRecords) {
   return data;
 }
 
+// Helper for Vercel cloud router sync (With Private IP check)
+async function performVercelRouterSync(password = 'admin', routerIp = '192.168.0.1') {
+  const cleanIp = (routerIp || ROUTER_IP).replace(/^https?:\/\//i, '').replace(/\/.*$/, '').trim();
+  
+  // Private LAN IP Check on Cloud Hosts
+  if (/^(192\.168|10\.|172\.(1[6-9]|2[0-9]|3[01]))/.test(cleanIp)) {
+    throw new Error(`Cloud Limit: Vercel servers cannot reach private LAN IP (${cleanIp}). Use local app (npm start) for auto-sync.`);
+  }
+
+  const httpUrl = `http://${cleanIp}/cgi-bin/http.cgi`;
+  
+  const tokenRes = await fetch(httpUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cmd: 232, method: 'GET', sessionId: '' })
+  });
+  
+  const textBody = await tokenRes.text();
+  if (textBody.trim().startsWith('<')) {
+    throw new Error(`Router at ${cleanIp} returned HTML. Verify IP or use local npm start for auto-sync.`);
+  }
+
+  const tokenData = JSON.parse(textBody);
+  const token = tokenData?.token || tokenData?.data?.token;
+  if (!token) throw new Error(`Could not connect to router at ${cleanIp}`);
+
+  const passwdHash = crypto.createHash('sha256').update(token + password).digest('hex');
+  const sessionId = crypto.createHash('md5').update(Math.random().toString()).digest('hex');
+
+  const loginRes = await fetch(httpUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cmd: 100, method: 'POST', username: 'admin', passwd: passwdHash, sessionId, isAutoUpgrade: '1', isCheckPasswd: '1' })
+  });
+  const loginText = await loginRes.text();
+  if (loginText.trim().startsWith('<')) throw new Error('Login returned HTML page.');
+  
+  const loginData = JSON.parse(loginText);
+  if (loginData.login_fail === 'fail') throw new Error('Router password incorrect.');
+
+  const activeSessionId = loginData.sessionId || sessionId;
+
+  const smsRes = await fetch(httpUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cmd: 12, method: 'GET', page_num: 1, subcmd: 0, sessionId: activeSessionId, token })
+  });
+  const smsData = await smsRes.json();
+  const rawList = typeof smsData?.sms_list === 'string' ? smsData.sms_list.split(',') : (smsData?.sms_list || []);
+
+  let combinedText = '';
+  rawList.forEach(item => {
+    try {
+      combinedText += '\n' + Buffer.from(item.trim(), 'base64').toString('utf-8');
+    } catch (e) {
+      if (typeof item === 'string') combinedText += '\n' + item;
+    }
+  });
+
+  const parsed = parseMtnnSmsText(combinedText);
+  return saveRecords(parsed);
+}
+
 // REST Endpoints
 app.get('/api/history', (req, res) => {
   res.json(getDbData());
+});
+
+app.post('/api/sync-router', async (req, res) => {
+  const { password, routerIp } = req.body;
+  try {
+    const updatedData = await performVercelRouterSync(password || 'admin', routerIp || '192.168.0.1');
+    res.json({ success: true, parsedCount: updatedData.records.length, data: updatedData });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post('/api/parse-sms', (req, res) => {
