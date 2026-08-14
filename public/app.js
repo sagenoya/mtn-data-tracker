@@ -18,6 +18,10 @@ let currentPage = 1;
 const PAGE_SIZE = 10;
 let dashboardPollTimer = null;
 let startupCollectorAttempted = false;
+let serviceConfig = null;
+let serviceAuthority = /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname)
+  ? 'local-service'
+  : 'browser';
 
 // Request notification permission if available
 if ('Notification' in window && Notification.permission === 'default') {
@@ -116,6 +120,7 @@ function applyDashboardState(nextData) {
 }
 
 async function refreshFromService() {
+  if (serviceAuthority !== 'local-service') return false;
   try {
     const res = await fetch('/api/history', { cache: 'no-store' });
     if (!res.ok) return false;
@@ -125,14 +130,27 @@ async function refreshFromService() {
   }
 }
 
+async function loadServiceConfig() {
+  try {
+    const response = await fetch('/api/config', { cache: 'no-store' });
+    if (!response.ok) return null;
+    serviceConfig = await response.json();
+    if (serviceConfig.dataAuthority) {
+      serviceAuthority = serviceConfig.dataAuthority;
+    }
+    return serviceConfig;
+  } catch (err) {
+    return null;
+  }
+}
+
 async function startConfiguredCollector() {
   if (startupCollectorAttempted) return;
   startupCollectorAttempted = true;
 
   try {
-    const configResponse = await fetch('/api/config', { cache: 'no-store' });
-    if (!configResponse.ok) return;
-    const config = await configResponse.json();
+    const config = serviceConfig || await loadServiceConfig();
+    if (!config) return;
     if (!config.autoSyncEnabled) {
       if (!currentData.lastSync?.success && !sessionStorage.getItem('wifiwatch_connection_prompted')) {
         sessionStorage.setItem('wifiwatch_connection_prompted', '1');
@@ -156,7 +174,7 @@ async function startConfiguredCollector() {
 }
 
 function startDashboardPolling() {
-  if (dashboardPollTimer) return;
+  if (serviceAuthority !== 'local-service' || dashboardPollTimer) return;
   dashboardPollTimer = setInterval(() => {
     void refreshFromService();
   }, 30000);
@@ -164,11 +182,28 @@ function startDashboardPolling() {
 
 // The local service is authoritative. Browser storage is only an offline cache.
 async function fetchData() {
-  const loadedFromService = await refreshFromService();
-  if (!loadedFromService) {
-    const local = loadLocalData();
-    if (local) applyDashboardState(local);
-    else applyDashboardState(DEFAULT_DATA);
+  const local = loadLocalData();
+  await loadServiceConfig();
+
+  if (serviceAuthority === 'local-service') {
+    const loadedFromService = await refreshFromService();
+    if (!loadedFromService && local) applyDashboardState(local);
+    else if (!loadedFromService) applyDashboardState(DEFAULT_DATA);
+  } else if (local) {
+    // Hosted Vercel mode is browser-local by design. The API may be used only
+    // to seed a new browser; it must not overwrite an existing user's cache.
+    applyDashboardState(local);
+  } else {
+    const seededFromService = await (async () => {
+      try {
+        const res = await fetch('/api/history', { cache: 'no-store' });
+        if (!res.ok) return false;
+        return applyDashboardState(await res.json());
+      } catch (err) {
+        return false;
+      }
+    })();
+    if (!seededFromService) applyDashboardState(DEFAULT_DATA);
   }
   startDashboardPolling();
   await startConfiguredCollector();
@@ -474,18 +509,20 @@ async function handleSettingsUpdate(e) {
   const monthlyLimitGB = parseFloat(document.getElementById('monthlyLimit').value) || 1000;
   const cycleStartDay = parseInt(document.getElementById('cycleStartDay').value) || 1;
 
-  try {
-    const response = await fetch('/api/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ monthlyLimitGB, cycleStartDay, isUnlimited })
-    });
-    if (response.ok) {
-      applyDashboardState(await response.json());
-      return;
+  if (serviceAuthority === 'local-service') {
+    try {
+      const response = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ monthlyLimitGB, cycleStartDay, isUnlimited })
+      });
+      if (response.ok) {
+        applyDashboardState(await response.json());
+        return;
+      }
+    } catch (err) {
+      // Offline/static mode still keeps settings locally.
     }
-  } catch (err) {
-    // Offline/static mode still keeps settings locally.
   }
 
   currentData.settings = { ...currentData.settings, monthlyLimitGB, cycleStartDay, isUnlimited };
@@ -571,11 +608,32 @@ async function handleRouterSync() {
     const newRecords = result.data?.records || result.records || [];
     const model = result.source?.label || result.detectedModel || 'MTN Router';
     if (result.data) applyDashboardState(result.data);
-    else mergeRecords(newRecords, model);
+    else {
+      const sourceId = result.source?.id || (routerIp === '192.168.1.1' ? 'zte-f6600p' : 'zlt-sms');
+      if (result.source) {
+        const sources = (currentData.sources || []).filter(source => source.id !== result.source.id);
+        currentData.sources = [...sources, result.source];
+      }
+      currentData.lastSync = {
+        success: true,
+        sourceId,
+        sourceType: result.source?.kind || (routerIp === '192.168.1.1' ? 'router-counter' : 'router-sms'),
+        sourceLabel: model,
+        routerIp,
+        observedAt: result.timestamp || new Date().toISOString(),
+        status: result.counterStatus || 'historical',
+        recordsIngested: newRecords.length,
+        observationId: null,
+        error: null
+      };
+      mergeRecords(newRecords, model);
+    }
 
     msgEl.className = 'status-msg success';
-    msgEl.textContent = result.counterStatus === 'baseline'
+    msgEl.textContent = ['baseline', 'counter-scope-changed'].includes(result.counterStatus)
       ? `Connected to ${model}. Baseline captured; the next sync will record usage.`
+      : result.counterStatus === 'access-counters-unavailable'
+        ? `Connected to ${model}, but access counters were temporarily unavailable. No usage was added.`
       : `Synced! Connected to ${model} (${result.sync?.recordsIngested ?? newRecords.length} records).`;
     setTimeout(() => {
       closeModal('sync-modal');

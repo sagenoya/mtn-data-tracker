@@ -25,8 +25,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (response && response.success) {
         msgEl.className = 'msg success';
-        msgEl.textContent = response.counterStatus === 'baseline'
+        msgEl.textContent = ['baseline', 'counter-scope-changed'].includes(response.counterStatus)
           ? `Connected to ${response.detectedModel}. Baseline captured.`
+          : response.counterStatus === 'access-counters-unavailable'
+            ? `Connected to ${response.detectedModel}, but access counters were temporarily unavailable.`
           : `Synced ${response.records.length} records from ${response.detectedModel}!`;
         
         // Save to chrome.storage.local

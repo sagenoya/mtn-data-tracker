@@ -50,6 +50,100 @@ function parseZteParameters(xml) {
   return values;
 }
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function parseZteInstances(xml, objectId) {
+  const escapedObjectId = escapeRegExp(objectId);
+  const objectPattern = new RegExp(
+    `<${escapedObjectId}\\b[^>]*>([\\s\\S]*?)<\\/${escapedObjectId}>`,
+    'i'
+  );
+  const objectMatch = objectPattern.exec(xml || '');
+  if (!objectMatch) return [];
+
+  const instances = [];
+  const instanceRegex = /<Instance\b[^>]*>([\s\S]*?)<\/Instance>/gi;
+  let instanceMatch;
+  while ((instanceMatch = instanceRegex.exec(objectMatch[1])) !== null) {
+    instances.push(parseZteParameters(instanceMatch[1]));
+  }
+  return instances;
+}
+
+function nonNegativeNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
+function sumCounterField(instances, field) {
+  return instances.reduce((total, instance) => {
+    const value = nonNegativeNumber(instance[field]);
+    return total + (value === null ? 0 : value);
+  }, 0);
+}
+
+function aggregateZteAccessCounters(wlanXml, lanXml) {
+  const wlanConfig = parseZteInstances(wlanXml, 'OBJ_WLANAP_ID');
+  const wlanStats = parseZteInstances(wlanXml, 'OBJ_WLANCONFIGDRV_ID');
+  const lanStats = parseZteInstances(lanXml, 'OBJ_PON_PORT_BASIC_STATUS_ID');
+  const enabledWlanIds = new Set(
+    wlanConfig
+      .filter(instance => instance.Enable === '1')
+      .map(instance => instance._InstID)
+      .filter(Boolean)
+  );
+  const selectedWlanStats = wlanStats.filter(instance => (
+    enabledWlanIds.size === 0 || enabledWlanIds.has(instance._InstID)
+  ));
+
+  const wlanHasCounters = selectedWlanStats.some(instance => (
+    nonNegativeNumber(instance.TotalBytesSent) !== null ||
+    nonNegativeNumber(instance.TotalBytesReceived) !== null
+  ));
+  const lanHasCounters = lanStats.some(instance => (
+    nonNegativeNumber(instance.InBytes) !== null ||
+    nonNegativeNumber(instance.OutBytes) !== null
+  ));
+
+  if (!wlanHasCounters || !lanHasCounters) {
+    throw new Error('ZTE WLAN/LAN access counters were not available.');
+  }
+
+  const wlanDownloadBytes = sumCounterField(selectedWlanStats, 'TotalBytesSent');
+  const wlanUploadBytes = sumCounterField(selectedWlanStats, 'TotalBytesReceived');
+  const lanDownloadBytes = sumCounterField(lanStats, 'OutBytes');
+  const lanUploadBytes = sumCounterField(lanStats, 'InBytes');
+
+  return {
+    downloadBytes: wlanDownloadBytes + lanDownloadBytes,
+    uploadBytes: wlanUploadBytes + lanUploadBytes,
+    counterDetails: {
+      scope: 'access',
+      wlan: {
+        enabledAccessPoints: Array.from(enabledWlanIds),
+        downloadBytes: wlanDownloadBytes,
+        uploadBytes: wlanUploadBytes,
+        counters: selectedWlanStats.map(instance => ({
+          id: instance._InstID || null,
+          downloadBytes: nonNegativeNumber(instance.TotalBytesSent) || 0,
+          uploadBytes: nonNegativeNumber(instance.TotalBytesReceived) || 0
+        }))
+      },
+      lan: {
+        ports: lanStats.map(instance => ({
+          id: instance._InstID || null,
+          downloadBytes: nonNegativeNumber(instance.OutBytes) || 0,
+          uploadBytes: nonNegativeNumber(instance.InBytes) || 0
+        })),
+        downloadBytes: lanDownloadBytes,
+        uploadBytes: lanUploadBytes
+      }
+    }
+  };
+}
+
 function localDateString(date = new Date()) {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return local.toISOString().substring(0, 10);
@@ -57,8 +151,8 @@ function localDateString(date = new Date()) {
 
 function zteCounterRecord(date, usageBytes, counters = null) {
   const usageGB = parseFloat((usageBytes / (1024 * 1024 * 1024)).toFixed(2));
-  const rxGB = counters ? (counters.rxBytes / (1024 * 1024 * 1024)).toFixed(2) : 'n/a';
-  const txGB = counters ? (counters.txBytes / (1024 * 1024 * 1024)).toFixed(2) : 'n/a';
+  const downloadGB = counters ? (counters.downloadBytes / (1024 * 1024 * 1024)).toFixed(2) : 'n/a';
+  const uploadGB = counters ? (counters.uploadBytes / (1024 * 1024 * 1024)).toFixed(2) : 'n/a';
   return {
     date,
     usageBytes,
@@ -72,7 +166,7 @@ function zteCounterRecord(date, usageBytes, counters = null) {
     confidence: 'observed',
     granularity: 'day',
     provenance: 'zte-f6600p',
-    rawMessage: `ZTE F6600P WAN counters: ${usageGB} GB (RX: ${rxGB}GB, TX: ${txGB}GB)`
+    rawMessage: `ZTE F6600P access counters: ${usageGB} GB (download: ${downloadGB}GB, upload: ${uploadGB}GB)`
   };
 }
 
@@ -84,9 +178,28 @@ async function updateZteCounterState(routerIp, counters) {
   const today = localDateString(now);
   const totalBytes = counters.rxBytes + counters.txBytes;
   const previousTotal = Number(previous?.lastTotalBytes);
+  const counterScope = counters.counterScope || 'wan';
+  const previousCounterScope = previous?.counterScope || 'wan';
   const records = [];
   let status = 'baseline';
   let state;
+
+  // Keep the last access-side cursor when the access pages temporarily fail.
+  // The next successful access read can then account for the whole interval.
+  if (previous && previousCounterScope === 'access' && counterScope === 'wan') {
+    state = {
+      ...previous,
+      lastFallbackAt: now.toISOString(),
+      lastFallbackCounters: {
+        rxBytes: counters.rxBytes,
+        txBytes: counters.txBytes,
+        totalBytes,
+        counterDetails: counters.counterDetails || null
+      }
+    };
+    await chrome.storage.local.set({ [key]: state });
+    return { records, status: 'access-counters-unavailable' };
+  }
 
   const makeState = (date, dayBytes, total) => ({
     routerIp,
@@ -95,6 +208,8 @@ async function updateZteCounterState(routerIp, counters) {
     lastTotalBytes: total,
     lastRxBytes: counters.rxBytes,
     lastTxBytes: counters.txBytes,
+    counterScope,
+    counterDetails: counters.counterDetails || null,
     lastSeenAt: now.toISOString()
   });
 
@@ -103,12 +218,15 @@ async function updateZteCounterState(routerIp, counters) {
   } else if (totalBytes < previousTotal) {
     state = makeState(today, 0, totalBytes);
     status = 'counter-reset';
+  } else if (previousCounterScope !== counterScope) {
+    state = makeState(today, 0, totalBytes);
+    status = 'counter-scope-changed';
   } else if (previous.date !== today) {
     const previousDayBytes = Math.max(0, Number(previous.dayBytes) || 0);
     if (previousDayBytes > 0) {
       records.push(zteCounterRecord(previous.date, previousDayBytes, {
-        rxBytes: Number(previous.lastRxBytes) || 0,
-        txBytes: Number(previous.lastTxBytes) || 0
+        downloadBytes: Number(previous.lastRxBytes) || 0,
+        uploadBytes: Number(previous.lastTxBytes) || 0
       }));
     }
     const increment = totalBytes - previousTotal;
@@ -127,8 +245,7 @@ async function updateZteCounterState(routerIp, counters) {
   return { records, status };
 }
 
-async function performZteRouterSync(password = 'admin', routerIp = '192.168.1.1') {
-  const cleanIp = routerIp.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').trim() || '192.168.1.1';
+async function authenticateZte(cleanIp, password) {
   const cookieJar = {};
   const loginEntry = await zteRequest(cleanIp, cookieJar, '/?_type=loginData&_tag=login_entry');
   let loginState;
@@ -166,24 +283,82 @@ async function performZteRouterSync(password = 'admin', routerIp = '192.168.1.1'
   }
 
   await zteRequest(cleanIp, cookieJar, '/');
-  const statusPage = await zteRequest(cleanIp, cookieJar, '/?_type=menuView&_tag=ethWanStatus&Menu3Location=0');
-  if (/SessionTimeout/i.test(statusPage.text)) {
-    throw new Error('ZTE session expired before WAN status could be read.');
+  return cookieJar;
+}
+
+async function readZteMenuData(cleanIp, password, pageTag, dataPath) {
+  const cookieJar = await authenticateZte(cleanIp, password);
+  const page = await zteRequest(cleanIp, cookieJar, `/?_type=menuView&_tag=${pageTag}&Menu3Location=0`);
+  if (/SessionTimeout/i.test(page.text)) {
+    throw new Error(`ZTE session expired before ${pageTag} could be read.`);
   }
-  const wanData = await zteRequest(cleanIp, cookieJar, '/?_type=menuData&_tag=wan_internetstatus_lua.lua&TypeUplink=2&pageType=1');
-  const params = parseZteParameters(wanData.text);
+  const data = await zteRequest(cleanIp, cookieJar, dataPath);
+  if (/SessionTimeout/i.test(data.text)) {
+    throw new Error(`ZTE session expired while reading ${dataPath}.`);
+  }
+  return data.text;
+}
+
+async function performZteRouterSync(password = 'admin', routerIp = '192.168.1.1') {
+  const cleanIp = routerIp.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').trim() || '192.168.1.1';
+  const wanXml = await readZteMenuData(
+    cleanIp,
+    password,
+    'ethWanStatus',
+    '/?_type=menuData&_tag=wan_internetstatus_lua.lua&TypeUplink=2&pageType=1'
+  );
+  const params = parseZteParameters(wanXml);
   const rxBytes = Number(params.RxBytes);
   const txBytes = Number(params.TxBytes);
   if (!Number.isFinite(rxBytes) || !Number.isFinite(txBytes)) {
     throw new Error(`ZTE WAN counters were not available at ${cleanIp}.`);
   }
 
+  let counterScope = 'access';
+  let counterDetails;
+  let downloadBytes = rxBytes;
+  let uploadBytes = txBytes;
+  try {
+    const lanXml = await readZteMenuData(
+      cleanIp,
+      password,
+      'localNetStatus',
+      '/?_type=menuData&_tag=status_lan_info_lua.lua'
+    );
+    const wlanXml = await readZteMenuData(
+      cleanIp,
+      password,
+      'localNetStatus',
+      '/?_type=menuData&_tag=wlan_wlanstatus_lua.lua'
+    );
+    const access = aggregateZteAccessCounters(wlanXml, lanXml);
+    downloadBytes = access.downloadBytes;
+    uploadBytes = access.uploadBytes;
+    counterDetails = {
+      ...access.counterDetails,
+      wanFallback: false,
+      wan: { downloadBytes: rxBytes, uploadBytes: txBytes }
+    };
+  } catch (error) {
+    counterScope = 'wan';
+    counterDetails = {
+      scope: 'wan-fallback',
+      wanFallback: true,
+      accessError: error.message,
+      wan: { downloadBytes: rxBytes, uploadBytes: txBytes }
+    };
+  }
+
   const counters = {
-    rxBytes,
-    txBytes,
-    totalBytes: rxBytes + txBytes,
+    rxBytes: downloadBytes,
+    txBytes: uploadBytes,
+    downloadBytes,
+    uploadBytes,
+    totalBytes: downloadBytes + uploadBytes,
     upTime: Number(params.UpTime) || 0,
-    connectionStatus: params.ConnStatus || 'Unknown'
+    connectionStatus: params.ConnStatus || 'Unknown',
+    counterScope,
+    counterDetails
   };
   const counterResult = await updateZteCounterState(cleanIp, counters);
   return {
@@ -199,7 +374,10 @@ async function performZteRouterSync(password = 'admin', routerIp = '192.168.1.1'
         historical: false,
         liveSnapshot: true,
         cumulativeCounters: true,
-        resetDetection: true
+        resetDetection: true,
+        dailyRecords: true,
+        counterScope: 'access',
+        accessCounters: true
       }
     },
     records: counterResult.records,
@@ -212,11 +390,15 @@ async function performZteRouterSync(password = 'admin', routerIp = '192.168.1.1'
       sourceId: 'zte-f6600p',
       routerIp: cleanIp,
       observedAt: new Date().toISOString(),
-      rxBytes,
-      txBytes,
+      rxBytes: counters.rxBytes,
+      txBytes: counters.txBytes,
+      downloadBytes: counters.downloadBytes,
+      uploadBytes: counters.uploadBytes,
+      totalBytes: counters.totalBytes,
       uptimeSeconds: counters.upTime,
       connectionStatus: counters.connectionStatus,
-      counterScope: 'wan'
+      counterScope: counters.counterScope,
+      counterDetails: counters.counterDetails
     }],
     parsedCount: counterResult.records.length,
     timestamp: new Date().toISOString()

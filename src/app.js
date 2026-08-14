@@ -58,7 +58,8 @@ function createApplication({
       defaultCollectorId: 'auto',
       autoSyncEnabled: Boolean(routerPassword),
       autoSyncIntervalMinutes: Number(process.env.AUTO_SYNC_INTERVAL_MINUTES || 5),
-      storage: 'json-store'
+      storage: 'json-store',
+      dataAuthority: allowPrivateRouterSync ? 'local-service' : 'browser'
     });
   });
 

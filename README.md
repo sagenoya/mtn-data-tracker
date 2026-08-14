@@ -10,14 +10,12 @@ A sleek, automated daily data usage tracker and analytics dashboard tailored for
 ## ✨ Key Features
 
 - **⚡ 1-Click Router Sync:** Directly extract SIM carrier daily usage notifications from your router's SMS inbox.
-- **🧵 ZTE FibreX Support:** ZTE ZXHN F6600P gateways are detected automatically and tracked through their WAN RX/TX byte counters, with a first-sync baseline and daily counter deltas.
-- **🛡️ Local-First Privacy:** Local collection and normalized history stay on the machine running the service; browser `localStorage` is only an offline cache.
+- **🛡️ 100% Private & Multi-User Isolated:** All records and settings are stored strictly in your browser's `localStorage`—no central server or database shares your data.
 - **📊 Daily Consumption & Burn Rate Analytics:** Automatically calculates month-to-date totals, average daily burn rates, remaining budget caps, and projected end-of-month totals.
 - **📈 Interactive Trend Charts:** Visualizes your daily usage history with minimal bar charts.
 - **🧩 Chrome Extension Bridge:** Bypasses browser HTTPS mixed-content restrictions to connect live cloud dashboards with local router gateways (`192.168.0.1` & `192.168.1.1`).
 - **📥 Universal SMS Importer:** Easily paste raw SMS text directly from mobile devices or router web pages without installing anything.
 - **📄 Instant CSV Export:** Download comprehensive usage history spreadsheets in 1 click.
-- **🧱 Normalized Collector Architecture:** SMS imports, ZLT SMS APIs, and ZTE WAN counters feed the same dashboard data contract. See [`docs/architecture.md`](docs/architecture.md).
 
 ---
 
@@ -41,8 +39,8 @@ To sync your router directly from the live web dashboard ([wifi-watch.vercel.app
 2. Click **Sync Router** in the top header.
 3. Select your device gateway:
    - `192.168.0.1` (MTN 5G ODU / ZLT X17U Router)
-   - `192.168.1.1` (MTN FibreX / ZTE F6600P)
-4. Enter your router admin password and click **Sync Router**. ZLT routers are read through their SMS API; ZTE F6600P FibreX gateways use WAN byte counters.
+   - `192.168.1.1` (MTN FibreX / Indoor Gateway)
+4. Enter your router admin password (default: `admin`) and click **Sync Router**.
 5. Your daily usage logs, burn rate, and consumption charts will populate instantly!
 
 ---
@@ -74,24 +72,14 @@ npm install
 npm start
 ```
 
-Open `http://localhost:3000` in your browser. When running locally with `ROUTER_PASSWORD` configured, the collector connects at startup and polls independently of the dashboard.
-
-For unattended local collection, configure the router IP, password, and polling interval outside the repository before starting the service:
-
-```bash
-ROUTER_IP=192.168.1.1 ROUTER_PASSWORD='your-router-password' AUTO_SYNC_INTERVAL_MINUTES=5 npm start
-```
-
-With `ROUTER_PASSWORD`, the collector runs at startup and periodically, independently of whether the dashboard is open. Without it, the dashboard can still perform a manual sync and import SMS text.
-
-The local service is the authoritative data source when available; browser `localStorage` is only an offline cache. The service exposes normalized history, source metadata, raw router observations, and reset/reconnect events through `/api/history` and `/api/status`.
+Open `http://localhost:3000` in your browser. When running locally, automated background sync executes daily at **7:00 AM**.
 
 ---
 
 ## 🔒 Security & Privacy
 
-- **Local Credentials:** The local collector reads the router password from its runtime configuration; it is not stored in normalized history. Use a keychain-backed launcher before packaging the service for unattended use.
-- **Isolated Cloud Mode:** Vercel runs with an ephemeral per-instance store and cannot reach private LAN router addresses; use the local service for router collection.
+- **Zero Cloud Transmission of Credentials:** Your router password and SMS contents are processed locally in your browser/extension and never sent to any external server.
+- **Isolated Storage:** Each visitor on Vercel receives their own private sandbox stored exclusively in their device's local browser memory.
 
 ---
 

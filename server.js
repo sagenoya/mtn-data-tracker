@@ -30,10 +30,9 @@ function listen(requestedPort) {
   });
 
   server.on('error', error => {
-    if (error.code === 'EADDRINUSE' && requestedPort === port) {
-      const alternatePort = port + 1;
-      console.log(`Port ${port} is busy; starting on http://localhost:${alternatePort}...`);
-      listen(alternatePort);
+    if (error.code === 'EADDRINUSE') {
+      console.error(`Port ${requestedPort} is already in use. Stop the existing WiFiWatch service or set PORT to another port; refusing to start a second service against the same JSON store.`);
+      process.exitCode = 1;
       return;
     }
     throw error;

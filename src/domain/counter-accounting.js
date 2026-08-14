@@ -86,6 +86,7 @@ function ingestCounterSnapshot(state, snapshot, source) {
   }
 
   const currentUptime = asFiniteNumber(snapshot.uptimeSeconds ?? snapshot.upTime);
+  const currentCounterScope = snapshot.counterScope || 'wan';
   const routerIp = snapshot.routerIp || source.routerIp || null;
   const previous = state.accounting[sourceId] || null;
   const previousObservation = previous?.lastObservation || null;
@@ -101,12 +102,73 @@ function ingestCounterSnapshot(state, snapshot, source) {
     currentRx < Number(previousObservation.downloadBytes) ||
     currentTx < Number(previousObservation.uploadBytes)
   );
+  const counterScopeChanged = hasPrevious &&
+    (previousObservation.counterScope || 'wan') !== currentCounterScope;
   const uptimeReset = hasPrevious && currentUptime !== null && previousObservation.uptimeSeconds !== null &&
     currentUptime < Number(previousObservation.uptimeSeconds);
 
-  if (!hasPrevious || sourceChanged || counterReset) {
+  // The ZTE collector can retain WAN counters as a diagnostic fallback when
+  // its access pages are temporarily unavailable. Do not replace the access
+  // cursor with that smaller/incompatible counter: the next access snapshot
+  // can then account for the whole interval without losing the fallback gap.
+  const accessCollectorUsingWanFallback = hasPrevious &&
+    source.capabilities?.counterScope === 'access' &&
+    currentCounterScope === 'wan' &&
+    (previousObservation.counterScope || 'wan') === 'access';
+
+  if (accessCollectorUsingWanFallback) {
+    const observation = {
+      id: `${sourceId}:${observedAt}`,
+      sourceId,
+      sourceType: source.kind,
+      sourceLabel: source.label,
+      routerIp,
+      observedAt,
+      epochId: previous.epochId,
+      downloadBytes: Math.round(currentRx),
+      uploadBytes: Math.round(currentTx),
+      totalBytes: Math.round(currentRx + currentTx),
+      uptimeSeconds: currentUptime,
+      connectionStatus: snapshot.connectionStatus || 'Unknown',
+      counterScope: currentCounterScope,
+      counterDetails: snapshot.counterDetails || null
+    };
+    const event = {
+      type: 'counter-fallback',
+      sourceId,
+      occurredAt: observedAt,
+      details: {
+        routerIp,
+        previousCounterScope: previousObservation.counterScope || 'wan',
+        fallbackCounterScope: currentCounterScope,
+        accessError: snapshot.counterDetails?.accessError || null,
+        accessCursorPreserved: true
+      }
+    };
+    appendObservation(state, observation);
+    state.accounting[sourceId] = {
+      ...previous,
+      lastStatus: 'access-counters-unavailable',
+      lastSeenAt: observedAt,
+      lastDiagnosticObservation: observation
+    };
+    appendEvent(state, event);
+    return {
+      status: 'access-counters-unavailable',
+      records: [],
+      observation,
+      event,
+      dailyTotals
+    };
+  }
+
+  if (!hasPrevious || sourceChanged || counterReset || counterScopeChanged) {
     epochId = createEpochId(sourceId, observedAt);
-    status = !hasPrevious ? 'baseline' : (sourceChanged ? 'source-changed' : 'counter-reset');
+    status = !hasPrevious
+      ? 'baseline'
+      : (sourceChanged
+        ? 'source-changed'
+        : (counterReset ? 'counter-reset' : 'counter-scope-changed'));
     event = {
       type: status,
       sourceId,
@@ -119,7 +181,9 @@ function ingestCounterSnapshot(state, snapshot, source) {
         currentDownloadBytes: currentRx,
         currentUploadBytes: currentTx,
         previousUptimeSeconds: previousObservation?.uptimeSeconds ?? null,
-        currentUptimeSeconds: currentUptime
+        currentUptimeSeconds: currentUptime,
+        previousCounterScope: previousObservation?.counterScope || 'wan',
+        currentCounterScope
       }
     };
   } else {
@@ -162,7 +226,8 @@ function ingestCounterSnapshot(state, snapshot, source) {
     totalBytes: Math.round(currentRx + currentTx),
     uptimeSeconds: currentUptime,
     connectionStatus: snapshot.connectionStatus || 'Unknown',
-    counterScope: snapshot.counterScope || 'wan'
+    counterScope: currentCounterScope,
+    counterDetails: snapshot.counterDetails || null
   };
 
   state.accounting[sourceId] = {
