@@ -141,27 +141,33 @@ function createZltSmsCollector({ fetchImpl = global.fetch, timeoutMs = DEFAULT_T
         // Model metadata is optional; the SMS usage data is still useful.
       }
 
-      const smsResponse = await request(cleanIp, {
-        cmd: 12,
-        method: 'GET',
-        page_num: 1,
-        subcmd: 0,
-        sessionId: activeSessionId,
-        token: activeToken
-      });
-      const smsData = await smsResponse.json();
-      const rawList = typeof smsData?.sms_list === 'string'
-        ? smsData.sms_list.split(',')
-        : (smsData?.sms_list || []);
-
       let combinedText = '';
-      rawList.forEach(item => {
+      for (let page = 1; page <= 3; page += 1) {
         try {
-          combinedText += `\n${Buffer.from(String(item).trim(), 'base64').toString('utf8')}`;
+          const smsResponse = await request(cleanIp, {
+            cmd: 12,
+            method: 'GET',
+            page_num: page,
+            subcmd: 0,
+            sessionId: activeSessionId,
+            token: activeToken
+          });
+          const smsData = await smsResponse.json();
+          const rawList = typeof smsData?.sms_list === 'string'
+            ? smsData.sms_list.split(',')
+            : (smsData?.sms_list || []);
+
+          rawList.forEach(item => {
+            try {
+              combinedText += `\n${Buffer.from(String(item).trim(), 'base64').toString('utf8')}`;
+            } catch (error) {
+              if (typeof item === 'string') combinedText += `\n${item}`;
+            }
+          });
         } catch (error) {
-          if (typeof item === 'string') combinedText += `\n${item}`;
+          // Some firmware versions expose fewer than three SMS pages.
         }
-      });
+      }
 
       const source = sourceFor(cleanIp, model);
       const records = parseMtnUsageSms(combinedText, source);

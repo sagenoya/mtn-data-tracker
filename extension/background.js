@@ -507,24 +507,26 @@ async function performRouterSync(password = 'admin', routerIp = '192.168.0.1') {
     }
   } catch (e) {}
 
-  // Step 4: Fetch SMS Logs (cmd: 12)
-  const smsRes = await fetch(httpUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ cmd: 12, method: 'GET', page_num: 1, subcmd: 0, sessionId: activeSessionId, token })
-  });
-
-  const smsData = await smsRes.json();
-  const rawList = typeof smsData?.sms_list === 'string' ? smsData.sms_list.split(',') : (smsData?.sms_list || []);
-
+  // Step 4: Fetch Multi-Page SMS Logs (Pages 1 to 3)
   let combinedText = '';
-  rawList.forEach(item => {
+  for (let page = 1; page <= 3; page++) {
     try {
-      combinedText += '\n' + atob(item.trim());
-    } catch (e) {
-      if (typeof item === 'string') combinedText += '\n' + item;
-    }
-  });
+      const smsRes = await fetch(httpUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cmd: 12, method: 'GET', page_num: page, subcmd: 0, sessionId: activeSessionId, token })
+      });
+      const smsData = await smsRes.json();
+      const rawList = typeof smsData?.sms_list === 'string' ? smsData.sms_list.split(',') : (smsData?.sms_list || []);
+      rawList.forEach(item => {
+        try {
+          combinedText += '\n' + atob(item.trim());
+        } catch (e) {
+          if (typeof item === 'string') combinedText += '\n' + item;
+        }
+      });
+    } catch (e) {}
+  }
 
   const records = parseMtnnSms(combinedText);
 
