@@ -120,7 +120,18 @@ class JsonStore {
   }
 
   read() {
-    const raw = JSON.parse(fs.readFileSync(this.filePath, 'utf8'));
+    this.ensureFile();
+    let raw;
+    try {
+      raw = JSON.parse(fs.readFileSync(this.filePath, 'utf8'));
+    } catch (e) {
+      if (e.code === 'ENOENT') {
+        this.ensureFile();
+        raw = JSON.parse(fs.readFileSync(this.filePath, 'utf8'));
+      } else {
+        throw e;
+      }
+    }
     const state = migrateLegacyState(raw);
     if (!raw.schemaVersion || raw.schemaVersion !== state.schemaVersion) this.write(state);
     return state;
