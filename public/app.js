@@ -427,7 +427,48 @@ function handleSettingsUpdate(e) {
   renderDashboard();
 }
 
-// Router Auto-Sync Handler (Merges router records into visitor's localStorage)
+// Chrome Extension Bridge Integration
+let isExtensionBridgeAvailable = false;
+window.addEventListener('message', (event) => {
+  if (event.source !== window || !event.data || event.data.source !== 'WIFIWATCH_EXTENSION') return;
+  if (event.data.type === 'WIFIWATCH_BRIDGE_AVAILABLE') {
+    isExtensionBridgeAvailable = true;
+  }
+});
+
+function syncViaExtension(routerIp, password) {
+  return new Promise((resolve, reject) => {
+    const requestId = 'req_' + Math.random().toString(36).substring(2);
+    const timeout = setTimeout(() => {
+      window.removeEventListener('message', handler);
+      reject(new Error('Extension request timed out'));
+    }, 15000);
+
+    function handler(event) {
+      if (event.source !== window || !event.data || event.data.source !== 'WIFIWATCH_EXTENSION') return;
+      if (event.data.type === 'WIFIWATCH_SYNC_RESPONSE' && event.data.requestId === requestId) {
+        clearTimeout(timeout);
+        window.removeEventListener('message', handler);
+        if (event.data.response && event.data.response.success) {
+          resolve(event.data.response);
+        } else {
+          reject(new Error(event.data.response?.error || 'Extension sync failed'));
+        }
+      }
+    }
+
+    window.addEventListener('message', handler);
+    window.postMessage({
+      source: 'WIFIWATCH_WEB_APP',
+      type: 'WIFIWATCH_SYNC_REQUEST',
+      requestId,
+      routerIp,
+      password
+    }, '*');
+  });
+}
+
+// Router Auto-Sync Handler (Supports Extension & Local Server)
 async function handleRouterSync() {
   const presetVal = document.getElementById('router-preset-select').value;
   let rawIp = presetVal === 'custom' ? document.getElementById('router-ip').value : presetVal;
@@ -442,17 +483,26 @@ async function handleRouterSync() {
   execBtn.disabled = true;
 
   try {
-    const res = await fetch('/api/sync-router', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password, routerIp })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Sync failed');
+    let result;
+    if (isExtensionBridgeAvailable) {
+      msgEl.textContent = `Connecting via Chrome Extension to ${routerIp}...`;
+      result = await syncViaExtension(routerIp, password);
+    } else {
+      const res = await fetch('/api/sync-router', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password, routerIp })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Sync failed');
+      result = {
+        records: data.records || data.data?.records || [],
+        detectedModel: data.detectedModel || data.data?.settings?.detectedModel || 'MTN Router'
+      };
+    }
 
-    const newRecords = data.records || data.data?.records || [];
-    const model = data.detectedModel || data.data?.settings?.detectedModel || 'MTN Router';
-    
+    const newRecords = result.records || [];
+    const model = result.detectedModel || 'MTN Router';
     mergeRecords(newRecords, model);
 
     msgEl.className = 'status-msg success';

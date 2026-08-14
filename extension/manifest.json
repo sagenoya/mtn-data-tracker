@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "WiFiWatch Router Bridge",
+  "version": "1.0.0",
+  "description": "Bypasses browser HTTPS mixed-content to sync router SMS logs directly into WiFiWatch data tracker.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "http://192.168.0.1/*",
+    "http://192.168.1.1/*",
+    "https://*.vercel.app/*",
+    "http://localhost:*/*",
+    "http://127.0.0.1:*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.vercel.app/*",
+        "http://localhost:*/*",
+        "http://127.0.0.1:*/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "WiFiWatch Router Bridge"
+  }
+}

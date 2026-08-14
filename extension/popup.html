@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WiFiWatch Bridge</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <div class="header">
+      <div class="logo">WIFIWATCH</div>
+      <div class="status-dot online" id="status-dot"></div>
+    </div>
+
+    <div class="content">
+      <div class="device-card">
+        <span class="label">Connected Router</span>
+        <select id="router-select" class="select-input">
+          <option value="192.168.0.1">192.168.0.1 (MTN 5G ODU / ZLT X17U)</option>
+          <option value="192.168.1.1">192.168.1.1 (MTN FibreX)</option>
+        </select>
+      </div>
+
+      <div class="password-group">
+        <span class="label">Admin Password</span>
+        <input type="password" id="router-password" placeholder="admin" class="text-input" value="admin">
+      </div>
+
+      <div id="sync-msg" class="msg"></div>
+
+      <button id="btn-sync" class="btn btn-primary">
+        Sync Router Now
+      </button>
+
+      <button id="btn-open-dashboard" class="btn btn-secondary">
+        Open Dashboard &rarr;
+      </button>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
