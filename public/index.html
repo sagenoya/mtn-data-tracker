@@ -18,7 +18,7 @@
         <div class="logo-mark">WIFIWATCH</div>
         <div>
           <h1>WiFiWatch Data Tracker</h1>
-          <p class="subtitle"><span id="detected-device-tag">MTN 5G ODU &bull; ZLT X17U</span> &bull; <a href="http://192.168.0.1/#/home" target="_blank">192.168.0.1</a></p>
+          <p class="subtitle"><span id="detected-device-tag">Connect a router to begin</span> &bull; <a id="detected-router-link" href="#" target="_blank">not connected</a></p>
         </div>
       </div>
       <div class="header-actions">
@@ -171,12 +171,12 @@
         <button class="close-btn" id="close-sync-modal">&times;</button>
       </div>
       <div class="modal-body">
-        <p class="modal-desc">Enter your Router/MiFi admin credentials to fetch SMS logs directly:</p>
+        <p class="modal-desc">Enter your router admin credentials to read usage data locally:</p>
         <div class="form-group">
           <label for="router-preset-select">Select Device Gateway IP</label>
           <select id="router-preset-select" class="input-element">
             <option value="192.168.0.1">192.168.0.1 (MTN 5G ODU / ZLT X17U Router)</option>
-            <option value="192.168.1.1">192.168.1.1 (MTN FibreX / Indoor Gateway)</option>
+            <option value="192.168.1.1">192.168.1.1 (MTN FibreX / ZTE F6600P)</option>
           </select>
         </div>
         <div class="form-group" id="custom-ip-group" style="display: none;">
@@ -185,7 +185,7 @@
         </div>
         <div class="form-group">
           <label for="router-password">Admin Password</label>
-          <input type="password" id="router-password" placeholder="admin" class="input-element">
+          <input type="password" id="router-password" placeholder="Router admin password" class="input-element">
         </div>
         <div id="sync-status-msg" class="status-msg"></div>
         <div class="extension-help-box" style="margin-top: 12px; font-size: 0.75rem; color: var(--text-muted);">

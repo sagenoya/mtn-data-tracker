@@ -4,7 +4,8 @@
   "description": "Track, parse, and calculate MTN ODU ZLT X17U WiFi data usage",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "express": "^4.19.2",
