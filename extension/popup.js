@@ -14,7 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
     syncBtn.disabled = true;
     syncBtn.textContent = 'Connecting...';
     msgEl.className = 'msg';
-    msgEl.textContent = 'Fetching router SMS logs...';
+    msgEl.textContent = 'Reading router usage data...';
 
     try {
       const response = await chrome.runtime.sendMessage({
@@ -25,7 +25,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (response && response.success) {
         msgEl.className = 'msg success';
-        msgEl.textContent = `Synced ${response.records.length} logs from ${response.detectedModel}!`;
+        msgEl.textContent = response.counterStatus === 'baseline'
+          ? `Connected to ${response.detectedModel}. Baseline captured.`
+          : `Synced ${response.records.length} records from ${response.detectedModel}!`;
         
         // Save to chrome.storage.local
         await chrome.storage.local.set({ wifiwatch_last_sync: response });

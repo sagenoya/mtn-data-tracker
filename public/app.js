@@ -1,7 +1,14 @@
 const STORAGE_KEY = 'wifiwatch_user_data';
 const DEFAULT_DATA = {
+  schemaVersion: 1,
   settings: { monthlyLimitGB: 1000, cycleStartDay: 1, isUnlimited: true, detectedModel: 'MTN 5G ODU • ZLT X17U' },
-  records: []
+  sources: [],
+  records: [],
+  recordVariants: [],
+  observations: [],
+  events: [],
+  accounting: {},
+  lastSync: null
 };
 
 let chartInstance = null;
@@ -9,6 +16,8 @@ let currentData = JSON.parse(JSON.stringify(DEFAULT_DATA));
 let selectedMonthKey = null;
 let currentPage = 1;
 const PAGE_SIZE = 10;
+let dashboardPollTimer = null;
+let startupCollectorAttempted = false;
 
 // Request notification permission if available
 if ('Notification' in window && Notification.permission === 'default') {
@@ -93,36 +102,76 @@ function setPlanMode(isUnlimited) {
   }
 }
 
-// Fetch history from browser localStorage or seed from backend
-async function fetchData() {
-  const local = loadLocalData();
-  if (local) {
-    currentData = local;
-    if (currentData.settings.isUnlimited === undefined) {
-      currentData.settings.isUnlimited = true;
-    }
-    renderMonthSelector();
-    renderDashboard();
-    return;
-  }
-
-  try {
-    const res = await fetch('/api/history');
-    if (res.ok) {
-      currentData = await res.json();
-    } else {
-      currentData = JSON.parse(JSON.stringify(DEFAULT_DATA));
-    }
-  } catch (err) {
-    currentData = JSON.parse(JSON.stringify(DEFAULT_DATA));
-  }
-
-  if (currentData.settings.isUnlimited === undefined) {
-    currentData.settings.isUnlimited = true;
-  }
+function applyDashboardState(nextData) {
+  if (!nextData || !Array.isArray(nextData.records) || !nextData.settings) return false;
+  currentData = {
+    ...JSON.parse(JSON.stringify(DEFAULT_DATA)),
+    ...nextData,
+    settings: { ...DEFAULT_DATA.settings, ...nextData.settings }
+  };
   saveLocalData(currentData);
   renderMonthSelector();
   renderDashboard();
+  return true;
+}
+
+async function refreshFromService() {
+  try {
+    const res = await fetch('/api/history', { cache: 'no-store' });
+    if (!res.ok) return false;
+    return applyDashboardState(await res.json());
+  } catch (err) {
+    return false;
+  }
+}
+
+async function startConfiguredCollector() {
+  if (startupCollectorAttempted) return;
+  startupCollectorAttempted = true;
+
+  try {
+    const configResponse = await fetch('/api/config', { cache: 'no-store' });
+    if (!configResponse.ok) return;
+    const config = await configResponse.json();
+    if (!config.autoSyncEnabled) {
+      if (!currentData.lastSync?.success && !sessionStorage.getItem('wifiwatch_connection_prompted')) {
+        sessionStorage.setItem('wifiwatch_connection_prompted', '1');
+        setTimeout(() => openModal('sync-modal'), 0);
+      }
+      return;
+    }
+
+    const syncResponse = await fetch('/api/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ collectorId: config.defaultCollectorId || 'auto', routerIp: config.defaultRouterIp })
+    });
+    if (syncResponse.ok) {
+      const result = await syncResponse.json();
+      if (result.data) applyDashboardState(result.data);
+    }
+  } catch (err) {
+    console.warn('Configured collector did not start:', err.message);
+  }
+}
+
+function startDashboardPolling() {
+  if (dashboardPollTimer) return;
+  dashboardPollTimer = setInterval(() => {
+    void refreshFromService();
+  }, 30000);
+}
+
+// The local service is authoritative. Browser storage is only an offline cache.
+async function fetchData() {
+  const loadedFromService = await refreshFromService();
+  if (!loadedFromService) {
+    const local = loadLocalData();
+    if (local) applyDashboardState(local);
+    else applyDashboardState(DEFAULT_DATA);
+  }
+  startDashboardPolling();
+  await startConfiguredCollector();
 }
 
 // Populate Month Dropdown Options
@@ -183,11 +232,19 @@ function renderDashboard() {
   // Update Dynamic Device Model Tag
   const deviceTag = document.getElementById('detected-device-tag');
   if (deviceTag) {
-    let model = settings.detectedModel || 'MTN 5G ODU • ZLT X17U';
+    let model = settings.detectedModel || 'Connect a router to begin';
     if (model === 'MTN MiFi / Router' || model === 'ZLT X17U' || model === 'X17U') {
       model = 'MTN 5G ODU • ZLT X17U';
     }
     deviceTag.textContent = model;
+  }
+
+  const routerLink = document.getElementById('detected-router-link');
+  const configuredSource = (currentData.sources || []).find(source => source.routerIp);
+  const routerIp = currentData.lastSync?.routerIp || configuredSource?.routerIp;
+  if (routerLink) {
+    routerLink.textContent = routerIp || 'not connected';
+    routerLink.href = routerIp ? `http://${routerIp}/` : '#';
   }
 
   const totalGB = filteredRecords.reduce((sum, r) => sum + r.usageGB, 0);
@@ -360,7 +417,7 @@ function renderTable(records) {
       <td><strong>${r.usageGB.toFixed(2)} GB</strong></td>
       <td>
         <span class="type-pill ${r.isCorrected ? 'corrected' : 'regular'}">
-          ${r.isCorrected ? 'Corrected' : 'Daily Log'}
+          ${r.isCorrected ? 'Corrected' : (r.sourceLabel || 'Daily Log')}
         </span>
       </td>
     </tr>
@@ -410,19 +467,28 @@ function exportCsv() {
   URL.revokeObjectURL(url);
 }
 
-// Settings Update Handler (Saved directly to localStorage)
-function handleSettingsUpdate(e) {
+// Settings Update Handler
+async function handleSettingsUpdate(e) {
   e.preventDefault();
   const isUnlimited = document.getElementById('mode-unlimited').classList.contains('active');
   const monthlyLimitGB = parseFloat(document.getElementById('monthlyLimit').value) || 1000;
   const cycleStartDay = parseInt(document.getElementById('cycleStartDay').value) || 1;
 
-  currentData.settings = {
-    ...currentData.settings,
-    monthlyLimitGB,
-    cycleStartDay,
-    isUnlimited
-  };
+  try {
+    const response = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ monthlyLimitGB, cycleStartDay, isUnlimited })
+    });
+    if (response.ok) {
+      applyDashboardState(await response.json());
+      return;
+    }
+  } catch (err) {
+    // Offline/static mode still keeps settings locally.
+  }
+
+  currentData.settings = { ...currentData.settings, monthlyLimitGB, cycleStartDay, isUnlimited };
   saveLocalData(currentData);
   renderDashboard();
 }
@@ -474,9 +540,12 @@ async function handleRouterSync() {
   let rawIp = presetVal === 'custom' ? document.getElementById('router-ip').value : presetVal;
   const routerIp = rawIp.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').trim() || '192.168.0.1';
   
-  const password = document.getElementById('router-password').value || 'admin';
+  const password = document.getElementById('router-password').value;
   const msgEl = document.getElementById('sync-status-msg');
   const execBtn = document.getElementById('btn-exec-sync');
+  const isLocalApp = /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname);
+
+  localStorage.setItem('wifiwatch_router_ip', routerIp);
 
   msgEl.className = 'status-msg';
   msgEl.textContent = `Connecting to router at ${routerIp}...`;
@@ -484,29 +553,30 @@ async function handleRouterSync() {
 
   try {
     let result;
-    if (isExtensionBridgeAvailable) {
+    if (isExtensionBridgeAvailable && !isLocalApp) {
+      if (!password) throw new Error('Enter the router admin password for the browser extension.');
       msgEl.textContent = `Connecting via Chrome Extension to ${routerIp}...`;
       result = await syncViaExtension(routerIp, password);
     } else {
       const res = await fetch('/api/sync-router', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password, routerIp })
+        body: JSON.stringify({ collectorId: 'auto', password, routerIp })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Sync failed');
-      result = {
-        records: data.records || data.data?.records || [],
-        detectedModel: data.detectedModel || data.data?.settings?.detectedModel || 'MTN Router'
-      };
+      result = data;
     }
 
-    const newRecords = result.records || [];
-    const model = result.detectedModel || 'MTN Router';
-    mergeRecords(newRecords, model);
+    const newRecords = result.data?.records || result.records || [];
+    const model = result.source?.label || result.detectedModel || 'MTN Router';
+    if (result.data) applyDashboardState(result.data);
+    else mergeRecords(newRecords, model);
 
     msgEl.className = 'status-msg success';
-    msgEl.textContent = `Synced! Connected to ${model} (${newRecords.length} records).`;
+    msgEl.textContent = result.counterStatus === 'baseline'
+      ? `Connected to ${model}. Baseline captured; the next sync will record usage.`
+      : `Synced! Connected to ${model} (${result.sync?.recordsIngested ?? newRecords.length} records).`;
     setTimeout(() => {
       closeModal('sync-modal');
       execBtn.disabled = false;
@@ -552,7 +622,8 @@ async function handlePing() {
   btn.disabled = true;
 
   try {
-    const res = await fetch('/api/ping');
+    const routerIp = localStorage.getItem('wifiwatch_router_ip') || '192.168.0.1';
+    const res = await fetch(`/api/ping?routerIp=${encodeURIComponent(routerIp)}`);
     const data = await res.json();
     if (data.status === 'online') {
       btn.textContent = `${data.latencyMs} ms`;
