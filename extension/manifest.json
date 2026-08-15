@@ -10,8 +10,9 @@
     "http://192.168.0.1/*",
     "http://192.168.1.1/*",
     "https://*.vercel.app/*",
-    "http://localhost:*/*",
-    "http://127.0.0.1:*/*"
+    "https://wifi-watch.vercel.app/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -20,8 +21,9 @@
     {
       "matches": [
         "https://*.vercel.app/*",
-        "http://localhost:*/*",
-        "http://127.0.0.1:*/*"
+        "https://wifi-watch.vercel.app/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
       ],
       "js": [
         "content.js"
