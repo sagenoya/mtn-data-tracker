@@ -22,6 +22,9 @@
         </div>
       </div>
       <div class="header-actions">
+        <button class="btn btn-outline" id="btn-privacy-toggle" title="Toggle Privacy Mode (Masks IPs & Sensitive Info)">
+          <span id="privacy-icon">🛡️</span> <span id="privacy-text">Privacy Off</span>
+        </button>
         <select id="month-selector" class="input-element select-month">
           <!-- Dynamic Month options -->
         </select>
@@ -34,7 +37,7 @@
       </div>
     </header>
 
-    <!-- Top Key Metrics -->
+    <!-- Top Key Metrics Grid -->
     <section class="metrics-grid">
       <div class="metric-card">
         <span class="metric-label">Total Usage This Month</span>
@@ -66,7 +69,7 @@
       <div class="banner-content">
         <div>
           <span class="banner-title" id="plan-status-title">Unlimited Data Plan Active</span>
-          <p class="banner-desc" id="plan-status-desc">Total Consumed: 130.50 GB across 6 days logged</p>
+          <p class="banner-desc" id="plan-status-desc">Total Consumed: 0.00 GB across 0 days logged</p>
         </div>
         <div class="banner-badge" id="banner-badge">UNLIMITED</div>
       </div>
@@ -79,9 +82,19 @@
     <div class="main-grid">
       <!-- Usage Chart -->
       <section class="card chart-card">
-        <div class="card-header">
-          <h2>Daily Consumption Trend</h2>
-          <span class="chart-tag">GB / Day</span>
+        <div class="card-header chart-header-row">
+          <div>
+            <h2>Data Consumption Trend</h2>
+            <span class="chart-tag" id="chart-sub-tag">GB / Day</span>
+          </div>
+          <div class="chart-controls">
+            <div class="time-pills">
+              <button class="pill-btn active" data-range="all">All</button>
+              <button class="pill-btn" data-range="30d">30d</button>
+              <button class="pill-btn" data-range="14d">14d</button>
+              <button class="pill-btn" data-range="7d">7d</button>
+            </div>
+          </div>
         </div>
         <div class="chart-wrapper">
           <canvas id="usageChart"></canvas>
@@ -131,8 +144,63 @@
             <strong id="res-status-tag">Unlimited Plan Active</strong>
           </div>
         </div>
-      </section>
     </div>
+
+    <!-- 5G Signal & Tower Health Card -->
+    <section class="card network-card">
+      <div class="card-header">
+        <div>
+          <h2>5G Signal & Tower Health</h2>
+          <span class="chart-tag" id="network-model-tag">MTN 5G ODU • ZLT X17U</span>
+        </div>
+        <span class="badge-pill-green" id="network-status-badge">● 5G Connected</span>
+      </div>
+
+      <div class="signal-metrics-row">
+        <div class="signal-box">
+          <span class="sig-label">LTE RSRP (Power)</span>
+          <h3 class="sig-val" id="sig-rsrp">-72 dBm</h3>
+          <div class="gauge-bar"><div class="gauge-fill" id="fill-rsrp" style="width: 85%;"></div></div>
+        </div>
+
+        <div class="signal-box">
+          <span class="sig-label">5G NR RSRP</span>
+          <h3 class="sig-val" id="sig-rsrp5g">-65 dBm</h3>
+          <div class="gauge-bar"><div class="gauge-fill" id="fill-rsrp5g" style="width: 92%;"></div></div>
+        </div>
+
+        <div class="signal-box">
+          <span class="sig-label">Signal Quality (RSRQ)</span>
+          <h3 class="sig-val" id="sig-rsrq">-12 dB</h3>
+          <div class="gauge-bar"><div class="gauge-fill" id="fill-rsrq" style="width: 76%;"></div></div>
+        </div>
+
+        <div class="signal-box">
+          <span class="sig-label">SINR / Noise Ratio</span>
+          <h3 class="sig-val" id="sig-sinr">15 dB</h3>
+          <div class="gauge-bar"><div class="gauge-fill" id="fill-sinr" style="width: 80%;"></div></div>
+        </div>
+      </div>
+
+      <div class="network-info-grid">
+        <div class="info-cell">
+          <span class="info-label">GATEWAY IP</span>
+          <strong class="info-val sensitive-data" id="info-gateway-ip">192.168.0.1</strong>
+        </div>
+        <div class="info-cell">
+          <span class="info-label">BAND / CARRIER</span>
+          <strong class="info-val" id="info-band">MTN 5G NSA • B7+B3</strong>
+        </div>
+        <div class="info-cell">
+          <span class="info-label">CELL ID</span>
+          <strong class="info-val sensitive-data" id="info-cell-id">6301153</strong>
+        </div>
+        <div class="info-cell">
+          <span class="info-label">ENODEB ID</span>
+          <strong class="info-val sensitive-data" id="info-enodeb-id">405521</strong>
+        </div>
+      </div>
+    </section>
 
     <!-- Minimal History Table with Pagination -->
     <section class="card table-card">

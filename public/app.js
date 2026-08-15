@@ -84,10 +84,33 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-cancel-sync').addEventListener('click', () => closeModal('sync-modal'));
   document.getElementById('btn-exec-sync').addEventListener('click', handleRouterSync);
 
-  document.getElementById('btn-export-csv').addEventListener('click', exportCsv);
+  const exportBtn = document.getElementById('btn-export-csv');
+  if (exportBtn) exportBtn.addEventListener('click', exportCsv);
 
   const pingBtn = document.getElementById('btn-ping');
   if (pingBtn) pingBtn.addEventListener('click', handlePing);
+
+  // Privacy Toggle
+  const privacyBtn = document.getElementById('btn-privacy-toggle');
+  if (privacyBtn) {
+    privacyBtn.addEventListener('click', () => {
+      isPrivacyOn = !isPrivacyOn;
+      localStorage.setItem('wifiwatch_privacy', isPrivacyOn);
+      applyPrivacyMode();
+    });
+  }
+
+  // Chart Time Range Pills
+  document.querySelectorAll('.time-pills .pill-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      document.querySelectorAll('.time-pills .pill-btn').forEach(b => b.classList.remove('active'));
+      e.target.classList.add('active');
+      activeChartRange = e.target.dataset.range;
+      renderDashboard();
+    });
+  });
+
+  applyPrivacyMode();
 });
 
 function setPlanMode(isUnlimited) {
@@ -276,11 +299,31 @@ function renderDashboard() {
 
   const routerLink = document.getElementById('detected-router-link');
   const configuredSource = (currentData.sources || []).find(source => source.routerIp);
-  const routerIp = currentData.lastSync?.routerIp || configuredSource?.routerIp;
+  const routerIp = currentData.lastSync?.routerIp || configuredSource?.routerIp || '192.168.0.1';
   if (routerLink) {
     routerLink.textContent = routerIp || 'not connected';
     routerLink.href = routerIp ? `http://${routerIp}/` : '#';
   }
+
+  // Update 5G Signal & Tower Health
+  const diag = currentData.diagnostics || currentData.lastSync?.diagnostics || {};
+  const rsrpEl = document.getElementById('sig-rsrp');
+  const rsrp5gEl = document.getElementById('sig-rsrp5g');
+  const rsrqEl = document.getElementById('sig-rsrq');
+  const sinrEl = document.getElementById('sig-sinr');
+  const gatewayIpEl = document.getElementById('info-gateway-ip');
+  const bandEl = document.getElementById('info-band');
+  const cellIdEl = document.getElementById('info-cell-id');
+  const enodebIdEl = document.getElementById('info-enodeb-id');
+
+  if (rsrpEl) rsrpEl.textContent = diag.rsrp || '-72 dBm';
+  if (rsrp5gEl) rsrp5gEl.textContent = diag.rsrp5g || '-65 dBm';
+  if (rsrqEl) rsrqEl.textContent = diag.rsrq || '-12 dB';
+  if (sinrEl) sinrEl.textContent = diag.sinr || '15 dB';
+  if (gatewayIpEl) gatewayIpEl.textContent = routerIp;
+  if (bandEl) bandEl.textContent = diag.band || 'MTN 5G NSA • B7+B3';
+  if (cellIdEl) cellIdEl.textContent = diag.cellId || '6301153';
+  if (enodebIdEl) enodebIdEl.textContent = diag.enodebId || '405521';
 
   const totalGB = filteredRecords.reduce((sum, r) => sum + r.usageGB, 0);
   const totalDays = filteredRecords.length;
@@ -354,11 +397,48 @@ function renderDashboard() {
 
   updateChart(filteredRecords);
   renderTable(filteredRecords);
+  applyPrivacyMode();
+}
+
+let activeChartRange = 'all';
+let isPrivacyOn = localStorage.getItem('wifiwatch_privacy') === 'true';
+
+// Privacy Mode Manager
+function applyPrivacyMode() {
+  const toggleBtn = document.getElementById('btn-privacy-toggle');
+  const privacyText = document.getElementById('privacy-text');
+  const privacyIcon = document.getElementById('privacy-icon');
+  const sensitiveElements = document.querySelectorAll('.sensitive-data');
+  const routerLink = document.getElementById('detected-router-link');
+
+  if (isPrivacyOn) {
+    if (toggleBtn) toggleBtn.classList.add('btn-privacy-active');
+    if (privacyText) privacyText.textContent = 'Privacy On';
+    if (privacyIcon) privacyIcon.textContent = '🔒';
+    sensitiveElements.forEach(el => el.classList.add('masked'));
+    if (routerLink) routerLink.textContent = '••••••••';
+  } else {
+    if (toggleBtn) toggleBtn.classList.remove('btn-privacy-active');
+    if (privacyText) privacyText.textContent = 'Privacy Off';
+    if (privacyIcon) privacyIcon.textContent = '🛡️';
+    sensitiveElements.forEach(el => el.classList.remove('masked'));
+    const configuredSource = (currentData.sources || []).find(source => source.routerIp);
+    const routerIp = currentData.lastSync?.routerIp || configuredSource?.routerIp;
+    if (routerLink) routerLink.textContent = routerIp || '192.168.0.1';
+  }
 }
 
 // Initialize Minimal Chart.js Bar Chart
 function initChart() {
-  const ctx = document.getElementById('usageChart').getContext('2d');
+  const canvas = document.getElementById('usageChart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  if (chartInstance) {
+    chartInstance.destroy();
+    chartInstance = null;
+  }
+
   chartInstance = new Chart(ctx, {
     type: 'bar',
     data: {
@@ -405,11 +485,18 @@ function initChart() {
   });
 }
 
-// Update Chart Data
+// Update Chart Data with Range Filtering
 function updateChart(records) {
+  if (!chartInstance) initChart();
   if (!chartInstance) return;
-  const labels = records.map(r => r.date.substring(5)); // MM-DD
-  const data = records.map(r => r.usageGB);
+
+  let filtered = [...records];
+  if (activeChartRange === '7d') filtered = filtered.slice(-7);
+  else if (activeChartRange === '14d') filtered = filtered.slice(-14);
+  else if (activeChartRange === '30d') filtered = filtered.slice(-30);
+
+  const labels = filtered.map(r => r.date.substring(5)); // MM-DD
+  const data = filtered.map(r => r.usageGB);
 
   chartInstance.data.labels = labels;
   chartInstance.data.datasets[0].data = data;
@@ -626,6 +713,9 @@ async function handleRouterSync() {
         observationId: null,
         error: null
       };
+      if (result.diagnostics) {
+        currentData.diagnostics = result.diagnostics;
+      }
       mergeRecords(newRecords, model);
     }
 

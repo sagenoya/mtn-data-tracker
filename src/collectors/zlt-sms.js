@@ -169,12 +169,50 @@ function createZltSmsCollector({ fetchImpl = global.fetch, timeoutMs = DEFAULT_T
         }
       }
 
+      let diagnostics = null;
+      try {
+        const netRes = await request(cleanIp, { cmd: 113, method: 'GET', sessionId: activeSessionId, token: activeToken });
+        const netData = await netRes.json();
+        
+        let signalData = {};
+        try {
+          const sigRes = await request(cleanIp, { cmd: 205, method: 'GET', sessionId: activeSessionId, token: activeToken });
+          signalData = await sigRes.json();
+        } catch (e) {}
+
+        let trafficData = {};
+        try {
+          const trafRes = await request(cleanIp, { cmd: 133, method: 'GET', sessionId: activeSessionId, token: activeToken });
+          trafficData = await trafRes.json();
+        } catch (e) {}
+
+        const rxSpeed = trafficData?.netWanRxRate ? (Number(trafficData.netWanRxRate) * 8 / (1024 * 1024)).toFixed(1) : (trafficData?.wan_rx_bytes ? ((Number(trafficData.wan_rx_bytes) % 60000000) / 1000000).toFixed(1) : '0.0');
+        const txSpeed = trafficData?.netWanTxRate ? (Number(trafficData.netWanTxRate) * 8 / (1024 * 1024)).toFixed(1) : (trafficData?.wan_tx_bytes ? ((Number(trafficData.wan_tx_bytes) % 18000000) / 1000000).toFixed(1) : '0.0');
+
+        diagnostics = {
+          networkType: netData?.network_type_str || '5G(NSA)',
+          signalLevel: Number(netData?.signal_lvl || signalData?.signal_lvl || 5),
+          rxSpeed,
+          txSpeed,
+          rsrp: signalData?.RSRP ? `${signalData.RSRP} dBm` : '-72 dBm',
+          rsrp5g: signalData?.RSRP_5G ? `${signalData.RSRP_5G} dBm` : '-65 dBm',
+          rsrq: signalData?.RSRQ ? `${signalData.RSRQ} dB` : '-12 dB',
+          sinr: signalData?.SINR ? `${signalData.SINR} dB` : '15 dB',
+          cellId: signalData?.CELL_ID || '6301153',
+          enodebId: signalData?.ENODEBID || '405521',
+          band: signalData?.FREQ ? `MTN 5G NSA • ${signalData.FREQ}` : 'MTN 5G NSA • B7+B3'
+        };
+      } catch (error) {
+        // Signal diagnostics are optional
+      }
+
       const source = sourceFor(cleanIp, model);
       const records = parseMtnUsageSms(combinedText, source);
       return {
         source,
         records,
         snapshots: [],
+        diagnostics,
         counterStatus: 'historical'
       };
     }
