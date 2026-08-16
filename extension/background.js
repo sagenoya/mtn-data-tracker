@@ -525,12 +525,15 @@ async function performRouterSync(password = 'admin', routerIp = '192.168.0.1') {
           if (typeof item === 'string') combinedText += '\n' + item;
         }
       });
-    let diagnostics = null;
+    } catch (e) {}
+  }
+
+  let diagnostics = null;
   try {
     const netRes = await fetch(httpUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cmd: 113, method: 'GET', sessionId: activeSessionId, token: activeToken })
+      body: JSON.stringify({ cmd: 113, method: 'GET', sessionId: activeSessionId, token })
     });
     const netData = await netRes.json();
     
@@ -539,7 +542,7 @@ async function performRouterSync(password = 'admin', routerIp = '192.168.0.1') {
       const sigRes = await fetch(httpUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cmd: 205, method: 'GET', sessionId: activeSessionId, token: activeToken })
+        body: JSON.stringify({ cmd: 205, method: 'GET', sessionId: activeSessionId, token })
       });
       signalData = await sigRes.json();
     } catch (e) {}
@@ -549,7 +552,7 @@ async function performRouterSync(password = 'admin', routerIp = '192.168.0.1') {
       const trafRes = await fetch(httpUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cmd: 133, method: 'GET', sessionId: activeSessionId, token: activeToken })
+        body: JSON.stringify({ cmd: 133, method: 'GET', sessionId: activeSessionId, token })
       });
       trafficData = await trafRes.json();
     } catch (e) {}
