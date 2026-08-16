@@ -2,6 +2,7 @@
 
 const { createSmsTextCollector } = require('./sms');
 const { createZteF6600PCollector } = require('./zte-f6600p');
+const { createZteUbusCollector } = require('./zte-ubus');
 const { createZltSmsCollector } = require('./zlt-sms');
 
 function publicMetadata(collector) {
@@ -17,6 +18,7 @@ function publicMetadata(collector) {
 function createCollectorRegistry(options = {}) {
   const builtInCollectors = [
     createZteF6600PCollector(options),
+    createZteUbusCollector(options),
     createZltSmsCollector(options),
     createSmsTextCollector()
   ];
