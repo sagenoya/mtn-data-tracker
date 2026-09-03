@@ -25,8 +25,11 @@ function parseMtnUsageSms(text, source = SMS_SOURCE) {
     const isCorrected = Boolean(match[1]);
     const dateParts = match[2].split('-');
     const date = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
-    const value = Number(match[3]);
-    const unit = match[4].toUpperCase();
+    let value = Number(match[3]);
+    let unit = match[4].toUpperCase();
+    if (unit === 'GB' && value > 500) {
+      unit = 'MB';
+    }
     const multiplier = unit === 'GB'
       ? BYTES_PER_GIB
       : unit === 'MB'

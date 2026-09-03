@@ -66,7 +66,13 @@ function mergeRecords(newRecords, detectedModel = null) {
       map.set(nr.date, nr);
     }
   });
-  currentData.records = Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
+  currentData.records = Array.from(map.values()).map(r => {
+    if (r.usageGB > 500) {
+      const fixedGB = parseFloat((r.usageGB / 1024).toFixed(2));
+      return { ...r, usageGB: fixedGB, usageBytes: Math.round(fixedGB * 1024 * 1024 * 1024) };
+    }
+    return r;
+  }).sort((a, b) => a.date.localeCompare(b.date));
   saveLocalData(currentData);
   renderMonthSelector();
   renderDashboard();
@@ -89,7 +95,13 @@ function applyDashboardState(nextData) {
     }
   });
 
-  const mergedRecords = Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
+  const mergedRecords = Array.from(map.values()).map(r => {
+    if (r.usageGB > 500) {
+      const fixedGB = parseFloat((r.usageGB / 1024).toFixed(2));
+      return { ...r, usageGB: fixedGB, usageBytes: Math.round(fixedGB * 1024 * 1024 * 1024) };
+    }
+    return r;
+  }).sort((a, b) => a.date.localeCompare(b.date));
 
   currentData = {
     ...JSON.parse(JSON.stringify(DEFAULT_DATA)),
@@ -111,20 +123,24 @@ function applyDashboardState(nextData) {
 
 // Detect untracked/missing calendar days in the selected month
 function detectGaps(records, monthKey) {
-  if (!records || records.length === 0 || !monthKey) return [];
-  const monthRecords = records
-    .filter(r => r.date.startsWith(monthKey))
-    .sort((a, b) => a.date.localeCompare(b.date));
-
-  if (monthRecords.length === 0) return [];
-
-  const existingDates = new Set(monthRecords.map(r => r.date));
+  if (!monthKey) return [];
   const [yearStr, monthStr] = monthKey.split('-');
-  const firstDay = parseInt(monthRecords[0].date.substring(8), 10);
-  const lastDay = parseInt(monthRecords[monthRecords.length - 1].date.substring(8), 10);
+  const year = parseInt(yearStr, 10);
+  const month = parseInt(monthStr, 10);
+  const daysInMonth = new Date(year, month, 0).getDate();
+
+  const now = new Date();
+  const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const isCurrentMonth = monthKey === currentMonthKey;
+
+  if (monthKey > currentMonthKey) return [];
+
+  const maxDayToCheck = isCurrentMonth ? Math.min(daysInMonth, now.getDate()) : daysInMonth;
+  const monthRecords = (records || []).filter(r => r.date && r.date.startsWith(monthKey));
+  const existingDates = new Set(monthRecords.map(r => r.date));
 
   const gaps = [];
-  for (let day = firstDay; day <= lastDay; day++) {
+  for (let day = 1; day <= maxDayToCheck; day++) {
     const dayStr = String(day).padStart(2, '0');
     const fullDate = `${yearStr}-${monthStr}-${dayStr}`;
     if (!existingDates.has(fullDate)) {
@@ -259,7 +275,10 @@ function parseMtnSmsClient(text) {
     const dateParts = match[2].split('-');
     const date = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
     const value = parseFloat(match[3]);
-    const unit = match[4].toUpperCase();
+    let unit = match[4].toUpperCase();
+    if (unit === 'GB' && value > 500) {
+      unit = 'MB';
+    }
     const multiplier = unit === 'GB' ? 1 : (unit === 'MB' ? 1 / 1024 : 1 / (1024 * 1024));
     const usageGB = parseFloat((value * multiplier).toFixed(2));
     records.push({
@@ -610,13 +629,15 @@ async function fetchData() {
   const local = loadLocalData();
   await loadServiceConfig();
 
+  // Pre-load browser local data so client records are never lost
+  if (local) {
+    applyDashboardState(local);
+  }
+
   if (serviceAuthority === 'local-service') {
     const loadedFromService = await refreshFromService();
-    if (!loadedFromService && local) applyDashboardState(local);
-    else if (!loadedFromService) applyDashboardState(DEFAULT_DATA);
-  } else if (local) {
-    applyDashboardState(local);
-  } else {
+    if (!loadedFromService && !local) applyDashboardState(DEFAULT_DATA);
+  } else if (!local) {
     const seededFromService = await (async () => {
       try {
         const res = await fetch('/api/history', { cache: 'no-store' });
@@ -632,13 +653,22 @@ async function fetchData() {
   await startConfiguredCollector();
 }
 
-// Month Selector
+// Month Selector - always includes current calendar month + all historical months
 function renderMonthSelector() {
   const selectEl = document.getElementById('month-selector');
   const records = currentData.records || [];
 
   const monthMap = new Map();
+
+  // 1. Always include the current real-world month
+  const now = new Date();
+  const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const currentMonthLabel = now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+  monthMap.set(currentMonthKey, currentMonthLabel);
+
+  // 2. Add all recorded months from usage history
   records.forEach(r => {
+    if (!r.date) return;
     const monthKey = r.date.substring(0, 7);
     const [year, month] = monthKey.split('-');
     const dateObj = new Date(parseInt(year, 10), parseInt(month, 10) - 1, 1);
@@ -647,12 +677,6 @@ function renderMonthSelector() {
   });
 
   const monthKeys = Array.from(monthMap.keys()).sort().reverse();
-
-  if (monthKeys.length === 0) {
-    const nowStr = new Date().toISOString().substring(0, 7);
-    monthKeys.push(nowStr);
-    monthMap.set(nowStr, new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' }));
-  }
 
   if (!selectedMonthKey || !monthMap.has(selectedMonthKey)) {
     selectedMonthKey = monthKeys[0];
@@ -678,26 +702,7 @@ function renderDashboard() {
     selectedMonthKey = records[records.length - 1].date.substring(0, 7);
   }
 
-  let filteredRecords = records.filter(r => selectedMonthKey && r.date.startsWith(selectedMonthKey));
-  if (filteredRecords.length === 0 && records.length > 0) {
-    filteredRecords = records;
-  }
-
-  // Detect and display gaps
-  const gaps = detectGaps(filteredRecords, selectedMonthKey);
-  const gapBanner = document.getElementById('gap-banner');
-  const gapTitle = document.getElementById('gap-banner-title');
-  const gapDesc = document.getElementById('gap-banner-desc');
-
-  if (gapBanner && gapTitle && gapDesc) {
-    if (gaps.length > 0) {
-      gapBanner.style.display = 'flex';
-      gapTitle.textContent = `${gaps.length} Missing Usage Day${gaps.length > 1 ? 's' : ''} Detected`;
-      gapDesc.textContent = `Untracked dates: ${gaps.slice(0, 3).join(', ')}${gaps.length > 3 ? ` +${gaps.length - 3} more` : ''}. Click to resolve.`;
-    } else {
-      gapBanner.style.display = 'none';
-    }
-  }
+  const filteredRecords = records.filter(r => selectedMonthKey && r.date.startsWith(selectedMonthKey));
 
   setPlanMode(isUnlimited);
   document.getElementById('monthlyLimit').value = settings.monthlyLimitGB || 1000;
@@ -741,11 +746,13 @@ function renderDashboard() {
   if (cellIdEl) cellIdEl.textContent = diag.cellId || '6301153';
   if (enodebIdEl) enodebIdEl.textContent = diag.enodebId || '405521';
 
-  const totalGB = filteredRecords.reduce((sum, r) => sum + r.usageGB, 0);
+  const totalGB = filteredRecords.reduce((sum, r) => sum + (Number(r.usageGB) || 0), 0);
   const totalDays = filteredRecords.length;
   const dailyAvg = totalDays > 0 ? (totalGB / totalDays) : 0;
 
-  const latestRecord = filteredRecords.length > 0 ? filteredRecords[filteredRecords.length - 1] : { usageGB: 0, date: '--' };
+  const latestRecord = filteredRecords.length > 0
+    ? filteredRecords[filteredRecords.length - 1]
+    : { usageGB: 0, date: '--' };
 
   const [yearStr, monthStr] = (selectedMonthKey || '2026-08').split('-');
   const selectedYear = parseInt(yearStr, 10);
@@ -775,6 +782,11 @@ function renderDashboard() {
   const budgetValEl = document.getElementById('val-daily-budget');
   const budgetSubEl = document.getElementById('sub-remaining-budget');
   const statusTagEl = document.getElementById('res-status-tag');
+  const burnRateEl = document.getElementById('res-burn-rate');
+  const projectedEndEl = document.getElementById('res-projected-end');
+
+  burnRateEl.textContent = `${dailyAvg.toFixed(2)} GB/day`;
+  projectedEndEl.textContent = `${projectedMonthEnd.toFixed(2)} GB`;
 
   if (isUnlimited) {
     budgetValEl.textContent = 'Unlimited';
@@ -785,22 +797,18 @@ function renderDashboard() {
     badgeEl.textContent = 'UNLIMITED';
     fillEl.style.width = '100%';
 
-    document.getElementById('res-burn-rate').textContent = `${dailyAvg.toFixed(2)} GB/day`;
-    document.getElementById('res-projected-end').textContent = `${projectedMonthEnd.toFixed(2)} GB`;
     statusTagEl.textContent = 'Unlimited Plan';
     statusTagEl.style.color = 'var(--accent-yellow)';
   } else {
-    budgetValEl.textContent = `${recommendedDailyCap.toFixed(2)} GB/d`;
-    budgetSubEl.textContent = `Target daily limit`;
-
     const pct = Math.min(100, (totalGB / settings.monthlyLimitGB) * 100);
+
+    budgetValEl.textContent = `${recommendedDailyCap.toFixed(2)} GB/d`;
+    budgetSubEl.textContent = 'Target daily limit';
+
     titleEl.textContent = `Using ${totalGB.toFixed(2)} GB of ${settings.monthlyLimitGB} GB Plan`;
-    descEl.textContent = `${remainingDays} days left in cycle &bull; ${remainingBudget.toFixed(2)} GB remaining`;
+    descEl.textContent = `${remainingDays} days left in cycle • ${remainingBudget.toFixed(2)} GB remaining`;
     badgeEl.textContent = `${pct.toFixed(1)}%`;
     fillEl.style.width = `${pct}%`;
-
-    document.getElementById('res-burn-rate').textContent = `${dailyAvg.toFixed(2)} GB/day`;
-    document.getElementById('res-projected-end').textContent = `${projectedMonthEnd.toFixed(2)} GB`;
 
     if (projectedMonthEnd > settings.monthlyLimitGB) {
       statusTagEl.textContent = `Over Cap (+${(projectedMonthEnd - settings.monthlyLimitGB).toFixed(1)} GB)`;
