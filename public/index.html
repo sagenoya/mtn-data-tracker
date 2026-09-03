@@ -28,6 +28,12 @@
         <select id="month-selector" class="input-element select-month">
           <!-- Dynamic Month options -->
         </select>
+        <button class="btn btn-outline" id="btn-open-import" title="Import MTN SMS or Add Manual Record">
+          + Import / Add
+        </button>
+        <button class="btn btn-outline" id="btn-open-backup" title="JSON Backup & Restore">
+          Backup / Restore
+        </button>
         <button class="btn btn-outline" id="btn-sync-router">
           <span class="status-indicator"></span> Sync Router
         </button>
@@ -36,6 +42,20 @@
         </button>
       </div>
     </header>
+
+    <!-- Gap Alert Banner (Auto-shown when date gaps exist) -->
+    <section class="gap-banner" id="gap-banner" style="display: none;">
+      <div class="gap-banner-content">
+        <span class="gap-banner-icon">⚡</span>
+        <div>
+          <span class="gap-banner-title" id="gap-banner-title">Missing Usage Days Detected</span>
+          <p class="gap-banner-desc" id="gap-banner-desc">There are untracked dates in this period (e.g. from router resets or offline days).</p>
+        </div>
+      </div>
+      <div class="gap-banner-actions">
+        <button class="btn btn-primary btn-xs" id="btn-open-gaps-modal">Fix Missing Days</button>
+      </div>
+    </section>
 
     <!-- Top Key Metrics Grid -->
     <section class="metrics-grid">
@@ -267,6 +287,109 @@
       <div class="modal-footer">
         <button class="btn btn-outline" id="btn-cancel-sync">Cancel</button>
         <button class="btn btn-primary" id="btn-exec-sync">Sync Router</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gaps Resolution Modal -->
+  <div class="modal-overlay" id="gaps-modal">
+    <div class="modal-box card">
+      <div class="modal-header">
+        <h3>Fix Missing Usage Days</h3>
+        <button class="close-btn" id="close-gaps-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc" id="gaps-modal-desc">Detected untracked calendar days in this billing cycle:</p>
+        <div class="gap-list" id="gaps-list-container">
+          <!-- Dynamically populated gap rows -->
+        </div>
+        <div class="gap-quick-actions">
+          <button type="button" class="btn btn-outline" id="btn-fill-gaps-zero">Fill Gaps as 0 GB (Offline)</button>
+          <button type="button" class="btn btn-secondary" id="btn-fill-gaps-avg">Fill with Daily Avg</button>
+        </div>
+        <div id="gaps-status-msg" class="status-msg"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" id="btn-cancel-gaps">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Unified Import SMS & Manual Add Modal -->
+  <div class="modal-overlay" id="import-modal">
+    <div class="modal-box card">
+      <div class="modal-header">
+        <h3>Import & Add Usage Data</h3>
+        <button class="close-btn" id="close-import-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-tabs">
+          <button type="button" class="modal-tab-btn active" data-tab="tab-sms">Paste MTN SMS</button>
+          <button type="button" class="modal-tab-btn" data-tab="tab-manual">Manual Entry</button>
+        </div>
+
+        <!-- Tab 1: SMS Paste -->
+        <div class="tab-content active" id="tab-sms">
+          <p class="modal-desc">Paste raw MTN daily usage notification SMS text:</p>
+          <div class="form-group">
+            <textarea id="sms-import-text" class="textarea-element" placeholder="e.g. Y'ello, your data usage for 12-08-2026 is 19.56GB"></textarea>
+          </div>
+          <button type="button" class="btn btn-primary full-width" id="btn-parse-sms">Parse & Import SMS</button>
+        </div>
+
+        <!-- Tab 2: Manual Date Entry -->
+        <div class="tab-content" id="tab-manual">
+          <p class="modal-desc">Record custom consumption for a specific date:</p>
+          <form id="manual-record-form">
+            <div class="form-group">
+              <label for="manual-date">Date (YYYY-MM-DD)</label>
+              <input type="date" id="manual-date" class="input-element" required>
+            </div>
+            <div class="form-group">
+              <label for="manual-gb">Data Used (GB)</label>
+              <input type="number" id="manual-gb" step="0.01" min="0" placeholder="e.g. 15.40" class="input-element" required>
+            </div>
+            <button type="submit" class="btn btn-primary full-width">Add Daily Record</button>
+          </form>
+        </div>
+
+        <div id="import-status-msg" class="status-msg"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" id="btn-cancel-import">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JSON Backup & Restore Modal -->
+  <div class="modal-overlay" id="backup-modal">
+    <div class="modal-box card">
+      <div class="modal-header">
+        <h3>Backup & Restore Data</h3>
+        <button class="close-btn" id="close-backup-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">Safeguard your data across router resets, device upgrades, or browser clears:</p>
+        
+        <div class="form-group" style="margin-top: 10px;">
+          <label>Export Complete Data Snapshot</label>
+          <p style="font-size: 0.775rem; color: var(--text-muted); margin-bottom: 8px;">Download a comprehensive JSON backup with all historical logs, sources, and accounting.</p>
+          <button type="button" class="btn btn-primary full-width" id="btn-download-json-backup">Export JSON Backup</button>
+        </div>
+
+        <div style="border-top: 1px solid var(--card-border); margin: 16px 0; padding-top: 16px;">
+          <div class="form-group">
+            <label>Restore From JSON Backup</label>
+            <p style="font-size: 0.775rem; color: var(--text-muted); margin-bottom: 8px;">Upload a previously exported <code>.json</code> backup file to restore or merge history.</p>
+            <input type="file" id="backup-file-input" accept=".json,application/json" style="display: none;">
+            <button type="button" class="btn btn-outline full-width" id="btn-trigger-file-upload">Choose JSON File & Restore</button>
+          </div>
+        </div>
+
+        <div id="backup-status-msg" class="status-msg"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" id="btn-cancel-backup">Close</button>
       </div>
     </div>
   </div>

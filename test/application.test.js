@@ -48,4 +48,22 @@ test('application advertises the correct storage authority for local and hosted 
   assert.equal(hostedHistory.schemaVersion, 1);
   assert.equal(hostedHistory.records.length, 0);
   assert.equal(hostedSync.status, 400);
+
+  const restoreRes = await fetch(`${local.baseUrl}/api/restore`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      records: [
+        { date: '2026-08-01', usageGB: 12.5, usageBytes: 13421772800 },
+        { date: '2026-08-02', usageGB: 10.0, usageBytes: 10737418240 }
+      ]
+    })
+  });
+  const restoreJson = await restoreRes.json();
+  assert.equal(restoreJson.success, true);
+  assert.equal(restoreJson.count, 2);
+
+  const backupRes = await fetch(`${local.baseUrl}/api/backup`).then(r => r.json());
+  assert.equal(backupRes.records.length, 2);
 });
+
