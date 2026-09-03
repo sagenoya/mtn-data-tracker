@@ -446,35 +446,40 @@ document.addEventListener('DOMContentLoaded', () => {
   initChart();
   fetchData();
 
+  const on = (id, event, fn) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener(event, fn);
+  };
+
   // Segmented Mode Switcher
-  document.getElementById('mode-unlimited').addEventListener('click', () => setPlanMode(true));
-  document.getElementById('mode-custom').addEventListener('click', () => setPlanMode(false));
+  on('mode-unlimited', 'click', () => setPlanMode(true));
+  on('mode-custom', 'click', () => setPlanMode(false));
 
   // Settings update
-  document.getElementById('calculator-form').addEventListener('submit', handleSettingsUpdate);
+  on('calculator-form', 'submit', handleSettingsUpdate);
 
   // Router sync modal
-  document.getElementById('btn-sync-router').addEventListener('click', () => openModal('sync-modal'));
-  document.getElementById('close-sync-modal').addEventListener('click', () => closeModal('sync-modal'));
-  document.getElementById('btn-cancel-sync').addEventListener('click', () => closeModal('sync-modal'));
-  document.getElementById('btn-exec-sync').addEventListener('click', handleRouterSync);
+  on('btn-sync-router', 'click', () => openModal('sync-modal'));
+  on('close-sync-modal', 'click', () => closeModal('sync-modal'));
+  on('btn-cancel-sync', 'click', () => closeModal('sync-modal'));
+  on('btn-exec-sync', 'click', handleRouterSync);
 
   // Gaps modal
-  document.getElementById('btn-open-gaps-modal').addEventListener('click', () => {
+  on('btn-open-gaps-modal', 'click', () => {
     renderGapsModal();
     openModal('gaps-modal');
   });
-  document.getElementById('close-gaps-modal').addEventListener('click', () => closeModal('gaps-modal'));
-  document.getElementById('btn-cancel-gaps').addEventListener('click', () => closeModal('gaps-modal'));
-  document.getElementById('btn-fill-gaps-zero').addEventListener('click', fillGapsWithZero);
-  document.getElementById('btn-fill-gaps-avg').addEventListener('click', fillGapsWithAvg);
+  on('close-gaps-modal', 'click', () => closeModal('gaps-modal'));
+  on('btn-cancel-gaps', 'click', () => closeModal('gaps-modal'));
+  on('btn-fill-gaps-zero', 'click', fillGapsWithZero);
+  on('btn-fill-gaps-avg', 'click', fillGapsWithAvg);
 
   // Import / Add Modal
-  document.getElementById('btn-open-import').addEventListener('click', () => openModal('import-modal'));
-  document.getElementById('close-import-modal').addEventListener('click', () => closeModal('import-modal'));
-  document.getElementById('btn-cancel-import').addEventListener('click', () => closeModal('import-modal'));
-  document.getElementById('btn-parse-sms').addEventListener('click', handleSmsImport);
-  document.getElementById('manual-record-form').addEventListener('submit', handleManualRecord);
+  on('btn-open-import', 'click', () => openModal('import-modal'));
+  on('close-import-modal', 'click', () => closeModal('import-modal'));
+  on('btn-cancel-import', 'click', () => closeModal('import-modal'));
+  on('btn-parse-sms', 'click', handleSmsImport);
+  on('manual-record-form', 'submit', handleManualRecord);
 
   // Modal Tab Switching
   document.querySelectorAll('.modal-tab-btn').forEach(btn => {
@@ -492,10 +497,10 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Backup & Restore Modal
-  document.getElementById('btn-open-backup').addEventListener('click', () => openModal('backup-modal'));
-  document.getElementById('close-backup-modal').addEventListener('click', () => closeModal('backup-modal'));
-  document.getElementById('btn-cancel-backup').addEventListener('click', () => closeModal('backup-modal'));
-  document.getElementById('btn-download-json-backup').addEventListener('click', exportJsonBackup);
+  on('btn-open-backup', 'click', () => openModal('backup-modal'));
+  on('close-backup-modal', 'click', () => closeModal('backup-modal'));
+  on('btn-cancel-backup', 'click', () => closeModal('backup-modal'));
+  on('btn-download-json-backup', 'click', exportJsonBackup);
 
   const fileInput = document.getElementById('backup-file-input');
   const triggerBtn = document.getElementById('btn-trigger-file-upload');
@@ -509,21 +514,15 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Export CSV & Ping
-  const exportBtn = document.getElementById('btn-export-csv');
-  if (exportBtn) exportBtn.addEventListener('click', exportCsv);
-
-  const pingBtn = document.getElementById('btn-ping');
-  if (pingBtn) pingBtn.addEventListener('click', handlePing);
+  on('btn-export-csv', 'click', exportCsv);
+  on('btn-ping', 'click', handlePing);
 
   // Privacy Toggle
-  const privacyBtn = document.getElementById('btn-privacy-toggle');
-  if (privacyBtn) {
-    privacyBtn.addEventListener('click', () => {
-      isPrivacyOn = !isPrivacyOn;
-      localStorage.setItem('wifiwatch_privacy', isPrivacyOn);
-      applyPrivacyMode();
-    });
-  }
+  on('btn-privacy-toggle', 'click', () => {
+    isPrivacyOn = !isPrivacyOn;
+    localStorage.setItem('wifiwatch_privacy', isPrivacyOn);
+    applyPrivacyMode();
+  });
 
   // Chart Time Range Pills
   document.querySelectorAll('.time-pills .pill-btn').forEach(btn => {
