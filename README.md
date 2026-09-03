@@ -10,11 +10,13 @@ A sleek, automated daily data usage tracker and analytics dashboard tailored for
 ## ✨ Key Features
 
 - **⚡ 1-Click Router Sync:** Directly extract SIM carrier daily usage notifications from your router's SMS inbox.
-- **🛡️ 100% Private & Multi-User Isolated:** All records and settings are stored strictly in your browser's `localStorage`—no central server or database shares your data.
+- **🛡️ 100% Reset-Safe Persistence:** Automatic merge protection ensures previous records are never overwritten or lost when routers are reset or SMS inboxes are cleared.
+- **🔍 Gap Detection & 1-Click Repair:** Automatically detects missing calendar dates in your billing cycle and lets you fill gaps as 0.00 GB (offline) or estimated daily averages.
+- **💾 Full JSON Backup & Restore:** Export complete snapshot backups to keep offline or transfer between devices.
 - **📊 Daily Consumption & Burn Rate Analytics:** Automatically calculates month-to-date totals, average daily burn rates, remaining budget caps, and projected end-of-month totals.
 - **📈 Interactive Trend Charts:** Visualizes your daily usage history with minimal bar charts.
 - **🧩 Chrome Extension Bridge:** Bypasses browser HTTPS mixed-content restrictions to connect live cloud dashboards with local router gateways (`192.168.0.1` & `192.168.1.1`).
-- **📥 Universal SMS Importer:** Easily paste raw SMS text directly from mobile devices or router web pages without installing anything.
+- **📥 Universal SMS Importer & Manual Entry:** Easily paste raw SMS text directly or log custom usage dates.
 - **📄 Instant CSV Export:** Download comprehensive usage history spreadsheets in 1 click.
 
 ---

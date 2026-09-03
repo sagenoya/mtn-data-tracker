@@ -412,8 +412,11 @@ function parseMtnnSms(text) {
   while ((match = regex.exec(text)) !== null) {
     const isCorrected = !!match[1];
     const rawDate = match[2];
-    const val = parseFloat(match[3]);
-    const unit = match[4].toUpperCase();
+    let val = parseFloat(match[3]);
+    let unit = match[4].toUpperCase();
+    if (unit === 'GB' && val > 500) {
+      unit = 'MB';
+    }
     const usageGB = unit === 'MB' ? val / 1024 : val;
     const [d, m, y] = rawDate.split('-');
     const isoDate = `${y}-${m}-${d}`;
@@ -507,9 +510,10 @@ async function performRouterSync(password = 'admin', routerIp = '192.168.0.1') {
     }
   } catch (e) {}
 
-  // Step 4: Fetch Multi-Page SMS Logs (Pages 1 to 3)
+  // Step 4: Fetch Multi-Page SMS Logs (Dynamic Inbox Pagination)
   let combinedText = '';
-  for (let page = 1; page <= 3; page++) {
+  let targetPages = 3;
+  for (let page = 1; page <= targetPages; page++) {
     try {
       const smsRes = await fetch(httpUrl, {
         method: 'POST',
@@ -517,7 +521,14 @@ async function performRouterSync(password = 'admin', routerIp = '192.168.0.1') {
         body: JSON.stringify({ cmd: 12, method: 'GET', page_num: page, subcmd: 0, sessionId: activeSessionId, token })
       });
       const smsData = await smsRes.json();
+      const routerTotalPages = parseInt(smsData?.total_page || smsData?.total_pages || smsData?.max_page || 0, 10);
+      if (routerTotalPages > 0) {
+        targetPages = Math.min(30, Math.max(targetPages, routerTotalPages));
+      }
+
       const rawList = typeof smsData?.sms_list === 'string' ? smsData.sms_list.split(',') : (smsData?.sms_list || []);
+      if (rawList.length === 0 && page > 3) break;
+
       rawList.forEach(item => {
         try {
           combinedText += '\n' + atob(item.trim());
@@ -525,7 +536,9 @@ async function performRouterSync(password = 'admin', routerIp = '192.168.0.1') {
           if (typeof item === 'string') combinedText += '\n' + item;
         }
       });
-    } catch (e) {}
+    } catch (e) {
+      if (page >= 3) break;
+    }
   }
 
   let diagnostics = null;

@@ -142,7 +142,8 @@ function createZltSmsCollector({ fetchImpl = global.fetch, timeoutMs = DEFAULT_T
       }
 
       let combinedText = '';
-      for (let page = 1; page <= 3; page += 1) {
+      let targetPages = 3;
+      for (let page = 1; page <= targetPages; page += 1) {
         try {
           const smsResponse = await request(cleanIp, {
             cmd: 12,
@@ -153,9 +154,16 @@ function createZltSmsCollector({ fetchImpl = global.fetch, timeoutMs = DEFAULT_T
             token: activeToken
           });
           const smsData = await smsResponse.json();
+          const routerTotalPages = parseInt(smsData?.total_page || smsData?.total_pages || smsData?.max_page || 0, 10);
+          if (routerTotalPages > 0) {
+            targetPages = Math.min(30, Math.max(targetPages, routerTotalPages));
+          }
+
           const rawList = typeof smsData?.sms_list === 'string'
             ? smsData.sms_list.split(',')
             : (smsData?.sms_list || []);
+
+          if (rawList.length === 0 && page > 3) break;
 
           rawList.forEach(item => {
             try {
@@ -165,7 +173,7 @@ function createZltSmsCollector({ fetchImpl = global.fetch, timeoutMs = DEFAULT_T
             }
           });
         } catch (error) {
-          // Some firmware versions expose fewer than three SMS pages.
+          if (page >= 3) break;
         }
       }
 

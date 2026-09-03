@@ -8,6 +8,8 @@ const SOURCE_RANKS = {
   'router-sms': 3,
   'router-counter': 2,
   imported: 2,
+  manual: 2,
+  estimated: 1,
   legacy: 1,
   unknown: 0
 };

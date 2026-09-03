@@ -8,6 +8,7 @@ const path = require('path');
 const { createCollectorRegistry } = require('./collectors/registry');
 const { JsonStore } = require('./storage/json-store');
 const { SyncService } = require('./services/sync-service');
+const { upsertSource, upsertUsageRecords } = require('./domain/schema');
 
 function cleanRouterIp(routerIp) {
   return (routerIp || '').replace(/^https?:\/\//i, '').replace(/\/.*$/, '').trim();
@@ -156,6 +157,34 @@ function createApplication({
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename=wifiwatch_usage_history.csv');
     res.send(rows.map(row => row.map(csvCell).join(',')).join('\n'));
+  });
+
+  app.get('/api/backup', (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename=wifiwatch_backup_${new Date().toISOString().substring(0, 10)}.json`);
+    res.json(syncService.getState());
+  });
+
+  app.post('/api/restore', (req, res) => {
+    try {
+      const backupData = req.body;
+      if (!backupData || !Array.isArray(backupData.records)) {
+        return res.status(400).json({ error: 'Invalid backup format' });
+      }
+      const state = store.update(current => {
+        const incoming = backupData.recordVariants?.length ? backupData.recordVariants : backupData.records;
+        const source = { id: 'backup-restore', label: 'Backup Restore', kind: 'imported' };
+        upsertSource(current, source);
+        upsertUsageRecords(current, incoming, source);
+        if (backupData.settings) {
+          current.settings = { ...current.settings, ...backupData.settings };
+        }
+        return current;
+      });
+      return res.json({ success: true, count: state.records.length, data: state });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
   });
 
   app.post('/api/settings', (req, res) => {
